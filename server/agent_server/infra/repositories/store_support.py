@@ -7,6 +7,7 @@ import json
 import re
 import secrets
 import shutil
+import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -78,6 +79,15 @@ from agent_server.core.utc import utc_now
 from agent_server.infra.timeline_store import SqlTimelineStore
 
 DERIVED_SESSION_TITLE_MAX_CHARS = 48
+
+# Diagnostic thresholds for _timeline_lock (Postgres path). A run that exceeds
+# any of these logs a warning so a stall points at the exact segment. Generous
+# on purpose — steady-state writes finish in milliseconds, so these stay quiet
+# until something is genuinely wrong (pool exhaustion, lock contention, a hung
+# write). Tunable here without touching the lock logic.
+_TIMELINE_LOCK_SLOW_CHECKOUT_SECONDS = 2.0
+_TIMELINE_LOCK_SLOW_ACQUIRE_SECONDS = 3.0
+_TIMELINE_LOCK_SLOW_HOLD_SECONDS = 5.0
 
 # Username format: 3-32 chars, lowercase letters / digits / hyphen / underscore.
 # Stored lowercase regardless of input.

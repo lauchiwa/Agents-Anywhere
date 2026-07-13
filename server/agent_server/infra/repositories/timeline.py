@@ -348,11 +348,55 @@ class TimelineRepositoryMixin:
             return
 
         lock_key = _session_lock_key(session_id)
+        # Diagnostic timing. The observed failure mode is a timeline write that
+        # never returns, which (because connector ingest is serial) freezes the
+        # whole device. We split the wait into three measurable segments so a
+        # slow/hung run points at the exact culprit in the logs:
+        #   1. checkout — waiting for a pooled connection (pool exhaustion)
+        #   2. acquire  — waiting on pg_advisory_lock (lock contention / dead conn)
+        #   3. hold     — time spent inside the critical section (slow write)
+        # Thresholds are generous so steady-state runs stay quiet; only genuine
+        # stalls log. lock_timeout on the engine turns segment 2 from an infinite
+        # hang into a raised error, which we surface here rather than swallow.
+        checkout_started = time.monotonic()
         async with self._engine.connect() as conn:
-            await conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": lock_key})
+            checkout_seconds = time.monotonic() - checkout_started
+            if checkout_seconds > _TIMELINE_LOCK_SLOW_CHECKOUT_SECONDS:
+                logger.warning(
+                    "timeline lock connection checkout slow session_id={} seconds={:.2f}",
+                    session_id,
+                    checkout_seconds,
+                )
+            acquire_started = time.monotonic()
+            try:
+                await conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": lock_key})
+            except Exception as exc:  # noqa: BLE001 — surface lock_timeout / dead conn
+                logger.error(
+                    "timeline advisory lock acquire failed session_id={} "
+                    "waited_seconds={:.2f} error={}",
+                    session_id,
+                    time.monotonic() - acquire_started,
+                    exc,
+                )
+                raise
+            acquire_seconds = time.monotonic() - acquire_started
+            if acquire_seconds > _TIMELINE_LOCK_SLOW_ACQUIRE_SECONDS:
+                logger.warning(
+                    "timeline advisory lock acquire slow session_id={} seconds={:.2f}",
+                    session_id,
+                    acquire_seconds,
+                )
+            hold_started = time.monotonic()
             try:
                 yield
             finally:
+                hold_seconds = time.monotonic() - hold_started
+                if hold_seconds > _TIMELINE_LOCK_SLOW_HOLD_SECONDS:
+                    logger.warning(
+                        "timeline advisory lock held long session_id={} seconds={:.2f}",
+                        session_id,
+                        hold_seconds,
+                    )
                 # If the connection died, PG already released the lock for us;
                 # unlock is best-effort.
                 try:

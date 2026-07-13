@@ -47,6 +47,16 @@ def _infer_backend_from_url(url: str) -> str:
     raise ValueError(f"unsupported AGENT_SERVER_DB_URL scheme: {url}")
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
 def build_engine(*, backend: str | None = None, url: str | None = None, sqlite_path: str | Path | None = None) -> tuple[str, AsyncEngine]:
     resolved_backend, async_url = resolve_db_url(backend=backend, url=url, sqlite_path=sqlite_path)
     engine_kwargs: dict[str, object] = {"future": True}
@@ -58,6 +68,60 @@ def build_engine(*, backend: str | None = None, url: str | None = None, sqlite_p
         # async pool; opening a new TCP connection per checkout is too costly
         # for production request latency.
         engine_kwargs["poolclass"] = NullPool
+    else:
+        # Postgres pool hardening. Without this the engine runs on the library
+        # defaults (pool_size=5, max_overflow=10, no liveness check, no idle
+        # recycle) and has no server-side timeout on lock waits. That's the
+        # failure mode behind "session stops updating, then the list won't
+        # refresh": one half-dead TCP connection (silently dropped by a cloud
+        # PG / NAT / firewall while idle) gets handed out, a statement on it
+        # hangs forever, and — because the connector WS ingest loop is serial —
+        # that one hang freezes heartbeats, RPC responses, and further timeline
+        # writes for the whole device. pre_ping validates a connection before
+        # handing it out; recycle proactively retires old ones; lock_timeout /
+        # statement_timeout turn an infinite wait into a fast, retryable error.
+        #
+        # All knobs are env-overridable so operators can tune per deployment
+        # without a code change.
+        #
+        # Sizing: the ceiling that matters is Postgres `max_connections`, which
+        # is SHARED across every client of the instance (this app + any other
+        # tenant DBs + the superuser + autovacuum workers). On a small shared PG
+        # (e.g. max_connections=50, tight RAM) an over-large pool both starves
+        # the other tenants and risks OOM (~5-10MB per PG backend). So the
+        # defaults are deliberately modest: 5 persistent + up to 10 burst = 15
+        # per worker, well under a 50-connection instance even with a second
+        # tenant. The workload is single-worker and mostly serial per connector,
+        # so 15 is ample; raise it only after the diagnostic logs show real
+        # checkout waits. Rule of thumb: (pool_size + max_overflow) * workers,
+        # summed across ALL apps on the instance, must stay under
+        # max_connections with headroom for the superuser and maintenance.
+        engine_kwargs["pool_size"] = _env_int("AGENT_SERVER_DB_POOL_SIZE", 5)
+        engine_kwargs["max_overflow"] = _env_int("AGENT_SERVER_DB_MAX_OVERFLOW", 10)
+        engine_kwargs["pool_timeout"] = _env_int("AGENT_SERVER_DB_POOL_TIMEOUT", 30)
+        engine_kwargs["pool_recycle"] = _env_int("AGENT_SERVER_DB_POOL_RECYCLE", 1800)
+        engine_kwargs["pool_pre_ping"] = True
+        # server_settings are applied per asyncpg connection. lock_timeout caps
+        # how long a statement (e.g. pg_advisory_lock) waits to acquire a lock;
+        # statement_timeout caps total statement runtime. 0 disables. We default
+        # statement_timeout to 0 (off) to avoid killing legitimately long work,
+        # and set a bounded lock_timeout since lock waits are the observed hang.
+        lock_timeout_ms = _env_int("AGENT_SERVER_DB_LOCK_TIMEOUT_MS", 15000)
+        statement_timeout_ms = _env_int("AGENT_SERVER_DB_STATEMENT_TIMEOUT_MS", 0)
+        server_settings: dict[str, str] = {}
+        if lock_timeout_ms > 0:
+            server_settings["lock_timeout"] = str(lock_timeout_ms)
+        if statement_timeout_ms > 0:
+            server_settings["statement_timeout"] = str(statement_timeout_ms)
+        connect_args: dict[str, object] = {}
+        if server_settings:
+            connect_args["server_settings"] = server_settings
+        # Bound how long establishing a new connection may block. Combined with
+        # pool_pre_ping (which validates before handing a pooled connection out)
+        # this keeps a dead/slow peer from stalling a checkout indefinitely.
+        connect_args["timeout"] = _env_int("AGENT_SERVER_DB_CONNECT_TIMEOUT", 10)
+        if connect_args:
+            engine_kwargs["connect_args"] = connect_args
     engine = create_async_engine(async_url, **engine_kwargs)
     if resolved_backend == SQLITE_BACKEND:
         _enable_sqlite_fk(engine)
