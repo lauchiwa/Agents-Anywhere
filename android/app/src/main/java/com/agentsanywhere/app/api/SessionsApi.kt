@@ -166,12 +166,14 @@ class SessionsApi(
         authorizationToken: String,
         sessionId: String,
         onOpen: () -> Unit = {},
+        onStart: (okhttp3.Call) -> Unit = {},
         onEvent: (RemoteSessionEvent) -> Unit,
     ) {
         client.streamSse(
             serverUrl = serverUrl,
             path = "/sessions/${sessionId.urlEncode()}/events?token=${authorizationToken.urlEncode()}",
             onOpen = onOpen,
+            onStart = onStart,
         ) { event ->
             onEvent(event.toRemoteSessionEvent())
         }

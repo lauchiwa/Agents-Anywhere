@@ -32,6 +32,14 @@ import kotlin.math.max
 private const val INITIAL_TIMELINE_LIMIT = 100
 private const val TIMELINE_PAGE_LIMIT = 100
 
+// SSE reconnect backoff. A fast-failing stream (server briefly down, transient
+// network drop) must not reconnect in a tight ~1s loop — that was what
+// exhausted the client's connection pool and froze the UI. Start small so a
+// healthy reconnect is near-instant, then grow to a ceiling. The backoff resets
+// to the minimum every time the stream successfully connects (onOpen).
+private const val SSE_RECONNECT_MIN_MS = 1_000L
+private const val SSE_RECONNECT_MAX_MS = 30_000L
+
 class SessionDetailController(
     private val sessionsApi: SessionsApi,
     private val sessionStore: AuthSessionStore,
@@ -124,14 +132,30 @@ class SessionDetailController(
                 return@callbackFlow
             }
         val devicesById = devices.associateBy { it.id }
+        // Holds the in-flight OkHttp Call so awaitClose can force-close its
+        // socket. Cancelling the coroutine alone does NOT unblock the SSE
+        // reader (it's parked in a blocking socket read); only Call.cancel()
+        // does. Without this, leaving a session leaked the stream's socket, and
+        // enough leaks re-created the reconnect storm this fix removes.
+        val activeCall = java.util.concurrent.atomic.AtomicReference<okhttp3.Call?>(null)
         val job = launch(Dispatchers.IO) {
+            // Exponential backoff for reconnects. A healthy stream stays open for
+            // minutes (server sends a 15s keepalive), so reaching onOpen resets the
+            // delay to its floor. If the stream fails fast repeatedly, the delay
+            // grows toward SSE_RECONNECT_MAX_MS instead of hammering the server
+            // (and exhausting client connections) once per second.
+            var backoffMs = SSE_RECONNECT_MIN_MS
             while (isActive) {
                 try {
                     sessionsApi.streamSessionEvents(
                         serverUrl = auth.serverUrl,
                         authorizationToken = auth.accessToken,
                         sessionId = sessionId,
-                        onOpen = { trySend(SessionStreamEvent.Connected) },
+                        onOpen = {
+                            backoffMs = SSE_RECONNECT_MIN_MS
+                            trySend(SessionStreamEvent.Connected)
+                        },
+                        onStart = { call -> activeCall.set(call) },
                     ) { event ->
                         trySend(SessionStreamEvent.Delta(event.toDelta(devicesById)))
                     }
@@ -145,10 +169,16 @@ class SessionDetailController(
                 } finally {
                     if (isActive) trySend(SessionStreamEvent.Disconnected)
                 }
-                delay(1_000)
+                delay(backoffMs)
+                backoffMs = (backoffMs * 2).coerceAtMost(SSE_RECONNECT_MAX_MS)
             }
         }
-        awaitClose { job.cancel() }
+        awaitClose {
+            // Force-close the socket first so a reader parked in readLine()
+            // unblocks immediately, then cancel the coroutine.
+            activeCall.getAndSet(null)?.cancel()
+            job.cancel()
+        }
     }
 
     suspend fun sendMessage(

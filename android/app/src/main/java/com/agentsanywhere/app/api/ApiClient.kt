@@ -1,11 +1,36 @@
 package com.agentsanywhere.app.api
 
+import okhttp3.Call
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.TimeUnit
 
 class ApiClient {
+    companion object {
+        // Shared client for SSE streams. One instance reuses OkHttp's
+        // connection pool instead of leaking a socket per reconnect.
+        //
+        // readTimeout is 40s, NOT 0. The server sends a `: keepalive` comment
+        // every 15s, so a healthy stream never idles longer than that — 40s
+        // leaves generous margin so normal quiet gaps don't trip it. Crucially,
+        // a *half-dead* connection (TCP still open but the server's pushes no
+        // longer arrive — common after NAT rebinding / network handoff) stops
+        // delivering keepalives; with readTimeout=0 the client would block on
+        // readLine() forever, silently missing every update. With 40s the read
+        // throws SocketTimeoutException, the caller's loop reconnects, and the
+        // stream self-heals. (readTimeout=0 was the bug behind "updates stop
+        // arriving until you kill the app".)
+        private val sseClient: OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(40, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
+    }
+
     fun getJson(
         serverUrl: String,
         path: String,
@@ -83,29 +108,49 @@ class ApiClient {
         serverUrl: String,
         path: String,
         onOpen: () -> Unit = {},
+        onStart: (Call) -> Unit = {},
         onEvent: (JSONObject) -> Unit,
     ) {
-        val endpoint = URL("${serverUrl.trimEnd('/')}$path")
-        val connection = (endpoint.openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 10_000
-            readTimeout = 35_000
-            setRequestProperty("Accept", "text/event-stream")
-            setRequestProperty("Cache-Control", "no-cache")
-            setRequestProperty("ngrok-skip-browser-warning", "true")
-        }
+        // SSE must ride a long-lived connection: the server keeps it open and
+        // sends a `: keepalive` comment every 15s. HttpURLConnection handled
+        // this poorly — its read timeout / connection-reuse heuristics made
+        // readLine() return null within ~1s (a false end-of-stream), so the
+        // caller's reconnect loop hammered the server ~1/s and, combined with
+        // per-reconnect full /state pulls, exhausted the client's connection
+        // pool until the app had to be killed. OkHttp fixes the reconnect storm.
+        //
+        // Cancellation: readLine() below is a BLOCKING socket read. A coroutine
+        // job.cancel() does NOT interrupt it, so when the user leaves the screen
+        // the read would keep the socket pinned and leak it. The `onStart(call)`
+        // callback hands the OkHttp Call to the caller so its awaitClose can
+        // invoke call.cancel(), which force-closes the socket and unblocks the
+        // read immediately. Without this, every screen re-entry leaked one
+        // stuck stream — enough of them reproduced the original hang.
+        val endpoint = "${serverUrl.trimEnd('/')}$path"
+        val request = Request.Builder()
+            .url(endpoint)
+            .header("Accept", "text/event-stream")
+            .header("Cache-Control", "no-cache")
+            .header("ngrok-skip-browser-warning", "true")
+            .build()
+        val call = sseClient.newCall(request)
+        onStart(call)
         try {
-            val responseCode = connection.responseCode
-            if (responseCode !in 200..299) {
-                val responseText = readResponseText(connection, responseCode)
-                throw ApiException(
-                    message = parseErrorMessage(responseText) ?: defaultErrorMessage(responseCode),
-                    statusCode = responseCode,
-                )
-            }
-            onOpen()
-            connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+            call.execute().use { response ->
+                if (!response.isSuccessful) {
+                    val responseText = response.body?.string().orEmpty()
+                    throw ApiException(
+                        message = parseErrorMessage(responseText) ?: defaultErrorMessage(response.code),
+                        statusCode = response.code,
+                    )
+                }
+                onOpen()
+                val reader = response.body?.charStream()?.buffered()
+                    ?: throw ApiException("Session stream returned an empty body.")
                 val data = StringBuilder()
+                // readLine() blocks until a full line arrives or the stream
+                // closes (returns null). Thread interruption from the caller's
+                // job.cancel() closes the socket, which unblocks this read.
                 while (!Thread.currentThread().isInterrupted) {
                     val line = reader.readLine() ?: break
                     when {
@@ -119,6 +164,8 @@ class ApiClient {
                             if (data.isNotEmpty()) data.append('\n')
                             data.append(line.removePrefix("data:").trimStart())
                         }
+                        // Lines starting with ':' are SSE comments (keepalives) —
+                        // ignore them; their only job is to keep the socket warm.
                     }
                 }
             }
@@ -127,7 +174,7 @@ class ApiClient {
         } catch (exc: IOException) {
             throw ApiException("Could not reach the server. Check the URL and network.", cause = exc)
         } finally {
-            connection.disconnect()
+            call.cancel()
         }
     }
 
