@@ -22,6 +22,10 @@ def _normalize_raw(raw: dict[str, Any]) -> list[NormalizedClaudeEvent]:
     message_id = _string(message.get("id") or raw.get("message_id") or raw.get("messageId"))
     role = _string(message.get("role") or raw.get("role"))
     timestamp = _string(raw.get("timestamp") or message.get("timestamp"))
+    # Sub-agent (Task tool) output carries the parent Task's tool_use_id so the
+    # timeline can attribute it to that call. It lives on the raw envelope next
+    # to uuid/session_id; the SDK also exposes it under camelCase in some paths.
+    parent_tool_use_id = _string(raw.get("parent_tool_use_id") or raw.get("parentToolUseId"))
     content = message.get("content")
     if not isinstance(content, list):
         if isinstance(content, str):
@@ -35,6 +39,7 @@ def _normalize_raw(raw: dict[str, Any]) -> list[NormalizedClaudeEvent]:
                     blockType="text",
                     text=content,
                     timestamp=timestamp,
+                    parentToolUseId=parent_tool_use_id,
                 )
             ]
         return []
@@ -57,6 +62,7 @@ def _normalize_raw(raw: dict[str, Any]) -> list[NormalizedClaudeEvent]:
                         blockType=block_type,
                         text=text,
                         timestamp=timestamp,
+                        parentToolUseId=parent_tool_use_id,
                     )
                 )
         elif block_type == "tool_use":
@@ -72,6 +78,7 @@ def _normalize_raw(raw: dict[str, Any]) -> list[NormalizedClaudeEvent]:
                     toolName=_string(block.get("name")),
                     toolInput=block.get("input"),
                     timestamp=timestamp,
+                    parentToolUseId=parent_tool_use_id,
                 )
             )
         elif block_type == "tool_result":
@@ -88,6 +95,7 @@ def _normalize_raw(raw: dict[str, Any]) -> list[NormalizedClaudeEvent]:
                     toolResultIsError=block.get("is_error") if isinstance(block.get("is_error"), bool) else None,
                     text=_string(block.get("content")),
                     timestamp=timestamp,
+                    parentToolUseId=parent_tool_use_id,
                 )
             )
     return normalized

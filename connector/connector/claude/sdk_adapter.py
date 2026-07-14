@@ -255,6 +255,7 @@ class ClaudeSdkAdapter:
             )
             stop_reason = _failure_message(exc, stderr)
             await self._finalize_live_stream_items(runtime, turn_id, status="failed")
+            await self._finalize_live_tool_items(runtime, turn_id, status="failed")
             await self._emit_item(
                 runtime.session_id,
                 _turn_end_item(
@@ -328,6 +329,7 @@ class ClaudeSdkAdapter:
                 status = "interrupted" if runtime.interrupted else ("failed" if subtype in {"error", "failed"} else "done")
                 result = "interrupted" if runtime.interrupted else ("failed" if status == "failed" else "completed")
                 await self._finalize_live_stream_items(runtime, turn_id, status=status)
+                await self._finalize_live_tool_items(runtime, turn_id, status=status)
                 await self._emit_item(
                     runtime.session_id,
                     _turn_end_item(
@@ -353,6 +355,7 @@ class ClaudeSdkAdapter:
                 else:
                     await self._emit_sdk_message(runtime, turn_id, buffered)
             await self._finalize_live_stream_items(runtime, turn_id, status=status)
+            await self._finalize_live_tool_items(runtime, turn_id, status=status)
             await self._emit_item(
                 runtime.session_id,
                 _turn_end_item(
@@ -451,6 +454,39 @@ class ClaudeSdkAdapter:
             finalized["updatedAt"] = completed_at
             finalized["completedAt"] = completed_at
             runtime.live_stream_items[item_id] = finalized
+            await self._emit_item(runtime.session_id, finalized)
+
+    async def _finalize_live_tool_items(
+        self,
+        runtime: _SdkSessionRuntime,
+        turn_id: str,
+        *,
+        status: str,
+    ) -> None:
+        # Tool items (Bash, Edit, Task/sub-agent, ...) start life as "running"
+        # on their tool_use and only flip to a terminal status when their
+        # tool_result arrives. If the turn ends first -- interrupted, failed, or
+        # the sub-agent/process dying before returning a result -- that result
+        # never comes, so the item is stranded at "running" forever and the UI
+        # spins indefinitely. When the turn wraps up we sweep this turn's tool
+        # items and force any still-open one to the turn's terminal status.
+        # Items that already reached a terminal state are left untouched so a
+        # normally-completed tool is never rewritten.
+        if not runtime.live_tool_items:
+            return
+        terminal = {"done", "failed", "interrupted", "cancelled"}
+        completed_at = utc_now()
+        for item_id, item in list(runtime.live_tool_items.items()):
+            if item.get("turnId") != turn_id:
+                continue
+            if item.get("status") in terminal:
+                continue
+            finalized = dict(item)
+            finalized["status"] = status
+            finalized["revision"] = int(finalized.get("revision") or 1) + 1
+            finalized["updatedAt"] = completed_at
+            finalized["completedAt"] = completed_at
+            runtime.live_tool_items[item_id] = finalized
             await self._emit_item(runtime.session_id, finalized)
 
     async def _emit_pending_user_message(self, runtime: _SdkSessionRuntime, turn_id: str) -> None:
@@ -854,6 +890,9 @@ def _sdk_message_to_raw(
         "uuid": source_event_id,
         "session_id": session_id,
         "timestamp": _optional_string(_extract_attr(message, "timestamp")) or utc_now(),
+        "parent_tool_use_id": _optional_string(
+            _extract_attr(message, "parent_tool_use_id", "parentToolUseId")
+        ),
         "message": {
             "id": message_id,
             "role": role,
@@ -936,6 +975,7 @@ def _partial_message_raw(runtime: _SdkSessionRuntime, turn_id: str, message: Any
         "uuid": runtime.partial_message_uuid or message_id,
         "session_id": _optional_string(_extract_attr(message, "session_id", "sessionId")) or runtime.external_session_id or "unknown",
         "timestamp": utc_now(),
+        "parent_tool_use_id": _optional_string(_extract_attr(message, "parent_tool_use_id", "parentToolUseId")),
         "message": {
             "id": message_id,
             "role": "assistant",

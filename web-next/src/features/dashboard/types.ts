@@ -212,6 +212,9 @@ export type TimelineItem = {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  // Present when this item is subagent (Task) output; holds the parent Task's
+  // timeline item id so children can be nested under it.
+  parentItemId?: string | null;
 };
 
 export type ApprovalStatus =

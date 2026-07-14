@@ -21,3 +21,8 @@ class NormalizedClaudeEvent:
     timestamp: str | None = None
     clientMessageId: str | None = None
     attachments: list[dict[str, Any]] | None = None
+    # Set on events that originate inside a sub-agent (Claude "Task" tool). It
+    # holds the tool_use_id of the parent Task call, so the timeline can group
+    # a sub-agent's live output under the Task card that spawned it instead of
+    # letting it leak into the main conversation.
+    parentToolUseId: str | None = None

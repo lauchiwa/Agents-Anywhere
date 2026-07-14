@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -235,6 +237,7 @@ internal fun MessageList(
     val displayMessages = lockedMessages ?: messages
     val displayWorkingLabel = if (lockedMessages != null) lockedWorkingLabel else workingLabel
     val timelineItems = remember(displayMessages) { groupTimelineMessages(displayMessages) }
+    val childrenByParent = remember(displayMessages) { buildChildrenByParent(displayMessages) }
     val agentTurnCopyTextByItem = remember(timelineItems, displayWorkingLabel) {
         buildAgentTurnCopyTextByItem(timelineItems, displayWorkingLabel != null)
     }
@@ -389,11 +392,14 @@ internal fun MessageList(
                                 onPreviewAttachment = onPreviewAttachment,
                                 onCopyMessage = onCopyMessage,
                                 onOpenFile = onOpenFile,
+                                childrenByParent = childrenByParent,
                             )
                             is TimelineRenderItem.ToolRun -> ToolRunGroup(
                                 messages = item.messages,
                                 darkMode = darkMode,
                                 listState = listState,
+                                childrenByParent = childrenByParent,
+                                onOpenFile = onOpenFile,
                             )
                         }
                         agentTurnCopyTextByItem[item.key]?.let { copyText ->
@@ -502,6 +508,10 @@ private fun AgentReplyCopyAction(
 private fun groupTimelineMessages(messages: List<TimelineMessage>): List<TimelineRenderItem> {
     val result = mutableListOf<TimelineRenderItem>()
     val pendingTools = mutableListOf<TimelineMessage>()
+    // Subagent (Task) output arrives as separate timeline items that carry the
+    // parent Task's item id. Those get nested under the parent card, so they
+    // must be pulled out of the top-level flow here.
+    val presentIds = messages.mapTo(mutableSetOf()) { it.id }
 
     fun flushTools() {
         when (pendingTools.size) {
@@ -513,6 +523,9 @@ private fun groupTimelineMessages(messages: List<TimelineMessage>): List<Timelin
     }
 
     for (message in messages) {
+        if (message.parentItemId != null && message.parentItemId in presentIds) {
+            continue
+        }
         if (message.isToolRunItem()) {
             pendingTools += message
         } else {
@@ -522,6 +535,16 @@ private fun groupTimelineMessages(messages: List<TimelineMessage>): List<Timelin
     }
     flushTools()
     return result
+}
+
+private fun buildChildrenByParent(
+    messages: List<TimelineMessage>,
+): Map<String, List<TimelineMessage>> {
+    val presentIds = messages.mapTo(mutableSetOf()) { it.id }
+    return messages
+        .filter { it.parentItemId != null && it.parentItemId in presentIds }
+        .sortedWith(TimelineMessageOrder)
+        .groupBy { it.parentItemId!! }
 }
 
 private fun buildAgentTurnCopyTextByItem(
@@ -609,6 +632,8 @@ private fun ToolRunGroup(
     messages: List<TimelineMessage>,
     darkMode: Boolean,
     listState: LazyListState,
+    childrenByParent: Map<String, List<TimelineMessage>> = emptyMap(),
+    onOpenFile: (String) -> Unit = {},
 ) {
     val primary = if (darkMode) Color(0xFFFAFAFA) else Color(0xFF2B2C29)
     val muted = if (darkMode) Color(0xFFA1A1AA) else Color(0xFF7C7B76)
@@ -700,6 +725,8 @@ private fun ToolRunGroup(
                 darkMode = darkMode,
                 listState = listState,
                 embedded = true,
+                children = childrenByParent[message.id].orEmpty(),
+                onOpenFile = onOpenFile,
             )
         }
     }
@@ -802,12 +829,19 @@ private fun TimelineMessageRow(
     onPreviewAttachment: (TimelineAttachment) -> Unit,
     onCopyMessage: (String) -> Unit,
     onOpenFile: (String) -> Unit,
+    childrenByParent: Map<String, List<TimelineMessage>> = emptyMap(),
 ) {
     when (message.kind) {
         TimelineMessageKind.Reasoning -> ReasoningSection(message, darkMode)
         TimelineMessageKind.Command,
         TimelineMessageKind.FileChange,
-        TimelineMessageKind.ToolCall -> ToolActivityCard(message, darkMode, listState)
+        TimelineMessageKind.ToolCall -> ToolActivityCard(
+            message = message,
+            darkMode = darkMode,
+            listState = listState,
+            children = childrenByParent[message.id].orEmpty(),
+            onOpenFile = onOpenFile,
+        )
         TimelineMessageKind.System -> ToolPlaceholder(message, darkMode)
         TimelineMessageKind.Text -> when (message.author) {
             MessageAuthor.User -> UserBubble(message, darkMode, sessionId, controller, onPreviewAttachment, onCopyMessage)
@@ -1096,13 +1130,17 @@ private fun ToolActivityCard(
     darkMode: Boolean,
     listState: LazyListState,
     embedded: Boolean = false,
+    children: List<TimelineMessage> = emptyList(),
+    onOpenFile: (String) -> Unit = {},
 ) {
     val surface = if (darkMode) Color(0xFF18181B) else Color(0xFFF1F0ED)
     val border = if (darkMode) Color(0xFF27272A) else Color(0xFFE4E1DB)
     val primary = if (darkMode) Color(0xFFFAFAFA) else Color(0xFF2B2C29)
     val muted = if (darkMode) Color(0xFFA1A1AA) else Color(0xFF7C7B76)
     val collapsedSurface = if (darkMode) Color(0x1018181B) else Color(0x12F1F0ED)
-    val expandable = message.kind == TimelineMessageKind.Command ||
+    val hasChildren = children.isNotEmpty()
+    val expandable = hasChildren ||
+        message.kind == TimelineMessageKind.Command ||
         message.kind == TimelineMessageKind.FileChange ||
         (message.kind == TimelineMessageKind.ToolCall && message.hasToolCallDetail)
     val haptic = LocalHapticFeedback.current
@@ -1173,16 +1211,70 @@ private fun ToolActivityCard(
             CompactStatusPill(label = message.badge.ifBlank { message.status }, darkMode = darkMode)
         }
         if (expanded && expandable) {
-            DisableSelection {
-                ToolActivityDetailCard(
-                    message = message,
+            if (message.kind != TimelineMessageKind.ToolCall || message.hasToolCallDetail) {
+                DisableSelection {
+                    ToolActivityDetailCard(
+                        message = message,
+                        darkMode = darkMode,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(surface)
+                            .border(1.dp, border, RoundedCornerShape(14.dp)),
+                    )
+                }
+            }
+            if (hasChildren) {
+                SubagentChildren(
+                    children = children,
                     darkMode = darkMode,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(surface)
-                        .border(1.dp, border, RoundedCornerShape(14.dp)),
+                    listState = listState,
+                    onOpenFile = onOpenFile,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubagentChildren(
+    children: List<TimelineMessage>,
+    darkMode: Boolean,
+    listState: LazyListState,
+    onOpenFile: (String) -> Unit,
+) {
+    val rail = if (darkMode) Color(0xFF3F3F46) else Color(0xFFD8D5CE)
+    Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+        Box(
+            modifier = Modifier
+                .padding(start = 7.dp, end = 4.dp)
+                .width(2.dp)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(1.dp))
+                .background(rail),
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            children.forEach { child ->
+                when (child.kind) {
+                    TimelineMessageKind.Reasoning -> ReasoningSection(child, darkMode)
+                    TimelineMessageKind.Command,
+                    TimelineMessageKind.FileChange,
+                    TimelineMessageKind.ToolCall -> ToolActivityCard(
+                        message = child,
+                        darkMode = darkMode,
+                        listState = listState,
+                        embedded = true,
+                        onOpenFile = onOpenFile,
+                    )
+                    TimelineMessageKind.System -> ToolPlaceholder(child, darkMode)
+                    TimelineMessageKind.Text -> when (child.author) {
+                        MessageAuthor.Agent -> AgentMarkdownText(child.text, darkMode, onOpenFile = onOpenFile)
+                        else -> AgentMarkdownText(child.text, darkMode, onOpenFile = onOpenFile)
+                    }
+                }
             }
         }
     }

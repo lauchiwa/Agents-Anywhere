@@ -21,6 +21,7 @@ export function TimelineEntry({
   session,
   item,
   approval,
+  childItems,
   resolvingApprovalId,
   resolvingStatus,
   onResolveApproval,
@@ -29,6 +30,7 @@ export function TimelineEntry({
   session: SessionView
   item: TimelineItem
   approval?: Approval
+  childItems?: TimelineItem[]
   resolvingApprovalId: string | null
   resolvingStatus: ApprovalResolveStatus | null
   onResolveApproval: (approvalId: string, status: ApprovalResolveStatus) => void
@@ -36,12 +38,31 @@ export function TimelineEntry({
   if (item.type === "turn.start" || item.type === "turn.end") return null
   if (item.type === "message") return <MessageCard token={token} session={session} item={item} />
   if (item.type === "tool") {
+    // Subagent (Task) output is nested under the parent tool card. Build the
+    // child nodes here and hand them to ToolCard as a slot to avoid a circular
+    // import (this module already imports ToolCard).
+    const childrenContent = childItems && childItems.length > 0 ? (
+      <div className="mt-2 space-y-2 border-l border-border/60 pl-3">
+        {childItems.map((child) => (
+          <TimelineEntry
+            key={child.id}
+            token={token}
+            session={session}
+            item={child}
+            resolvingApprovalId={resolvingApprovalId}
+            resolvingStatus={resolvingStatus}
+            onResolveApproval={onResolveApproval}
+          />
+        ))}
+      </div>
+    ) : null
     return (
       <ToolCard
         item={item}
         token={token}
         session={session}
         approval={approval}
+        childrenContent={childrenContent}
         resolvingApprovalId={resolvingApprovalId}
         resolvingStatus={resolvingStatus}
         onResolveApproval={onResolveApproval}

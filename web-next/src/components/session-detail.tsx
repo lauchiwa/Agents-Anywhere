@@ -812,6 +812,10 @@ export function SessionDetail({
     () => groupTimelineItems(state?.items ?? [], approvalTargetIds),
     [approvalTargetIds, state?.items],
   )
+  const childrenByParent = React.useMemo(
+    () => buildChildrenByParent(state?.items ?? []),
+    [state?.items],
+  )
 
   if (loading && !session) return <SessionSkeleton />
 
@@ -874,6 +878,7 @@ export function SessionDetail({
                   token={token}
                   session={session}
                   approvalByTarget={approvalByTarget}
+                  childrenByParent={childrenByParent}
                   resolvingApprovalId={resolvingApprovalId}
                   resolvingStatus={resolvingStatus}
                   onResolveApproval={handleResolveApproval}
@@ -885,6 +890,7 @@ export function SessionDetail({
                   session={session}
                   item={group.item}
                   approval={approvalByTarget.get(group.item.id)}
+                  childItems={childrenByParent.get(group.item.id)}
                   resolvingApprovalId={resolvingApprovalId}
                   resolvingStatus={resolvingStatus}
                   onResolveApproval={handleResolveApproval}
@@ -1000,6 +1006,10 @@ type TimelineGroup = TimelineSingleGroup | TimelineToolRunGroup
 function groupTimelineItems(items: TimelineItem[], approvalTargetIds: Set<string>): TimelineGroup[] {
   const groups: TimelineGroup[] = []
   let pendingTools: TimelineItem[] = []
+  // Subagent (Task) output arrives as separate timeline items carrying the
+  // parent Task's item id; nest those under the parent card and pull them out
+  // of the top-level flow.
+  const presentIds = new Set(items.map((item) => item.id))
 
   const flushTools = () => {
     if (pendingTools.length >= 2) {
@@ -1015,6 +1025,9 @@ function groupTimelineItems(items: TimelineItem[], approvalTargetIds: Set<string
   }
 
   for (const item of items) {
+    if (item.parentItemId && presentIds.has(item.parentItemId)) {
+      continue
+    }
     if (isToolRunBarItem(item) && !approvalTargetIds.has(item.id)) {
       pendingTools.push(item)
       continue
@@ -1024,6 +1037,19 @@ function groupTimelineItems(items: TimelineItem[], approvalTargetIds: Set<string
   }
   flushTools()
   return groups
+}
+
+function buildChildrenByParent(items: TimelineItem[]): Map<string, TimelineItem[]> {
+  const presentIds = new Set(items.map((item) => item.id))
+  const byParent = new Map<string, TimelineItem[]>()
+  for (const item of items) {
+    const parentId = item.parentItemId
+    if (!parentId || !presentIds.has(parentId)) continue
+    const bucket = byParent.get(parentId)
+    if (bucket) bucket.push(item)
+    else byParent.set(parentId, [item])
+  }
+  return byParent
 }
 
 function isToolRunBarItem(item: TimelineItem): boolean {
@@ -1037,6 +1063,7 @@ function ToolRunGroup({
   token,
   session,
   approvalByTarget,
+  childrenByParent,
   resolvingApprovalId,
   resolvingStatus,
   onResolveApproval,
@@ -1045,6 +1072,7 @@ function ToolRunGroup({
   token: string
   session: SessionView
   approvalByTarget: Map<string | null, Approval>
+  childrenByParent: Map<string, TimelineItem[]>
   resolvingApprovalId: string | null
   resolvingStatus: ApprovalResolveStatus | null
   onResolveApproval: (approvalId: string, status: ApprovalResolveStatus) => void
@@ -1071,6 +1099,7 @@ function ToolRunGroup({
             session={session}
             item={item}
             approval={approvalByTarget.get(item.id)}
+            childItems={childrenByParent.get(item.id)}
             resolvingApprovalId={resolvingApprovalId}
             resolvingStatus={resolvingStatus}
             onResolveApproval={onResolveApproval}

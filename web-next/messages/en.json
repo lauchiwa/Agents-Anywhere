@@ -632,7 +632,9 @@
       "toolToolFallback": "tool",
       "showCode": "Show code",
       "hideCode": "Hide code",
-      "loadCodeFailed": "Failed to load code"
+      "loadCodeFailed": "Failed to load code",
+      "toolResults": "Tool results",
+      "toolResultsLines": "{count} lines"
     },
     "sessionStatus": {
       "error": "Error",

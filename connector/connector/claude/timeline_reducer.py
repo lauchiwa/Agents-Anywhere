@@ -44,6 +44,17 @@ class ClaudeTimelineReducer:
         order_seq: int,
     ) -> dict[str, Any] | None:
         message_id = event.messageId or event.sourceEventId
+        # If this event came from inside a sub-agent (Task tool), resolve the
+        # parent Task's tool_use_id to the timeline item id of that Task card,
+        # so the client can nest sub-agent output under it. Uses the same
+        # identity derivation as the Task tool_call item itself.
+        parent_item_id: str | None = None
+        if event.parentToolUseId:
+            parent_item_id = ClaudeTimelineIdentity.tool_call(
+                session_id=session_id,
+                claude_session_id=event.claudeSessionId,
+                tool_use_id=event.parentToolUseId,
+            )
         if event.toolUseId and event.toolResult is not None:
             item_id = ClaudeTimelineIdentity.tool_result(
                 session_id=session_id,
@@ -59,6 +70,7 @@ class ClaudeTimelineReducer:
                 "type": "tool",
                 "status": status,
                 "role": "tool",
+                "parentItemId": parent_item_id,
                 "content": content,
                 "source": _source(event, turn_id, "tool_result"),
                 "orderSeq": order_seq,
@@ -83,6 +95,7 @@ class ClaudeTimelineReducer:
                 "type": "tool",
                 "status": "running",
                 "role": "tool",
+                "parentItemId": parent_item_id,
                 "content": content,
                 "source": _source(event, turn_id, "tool_use"),
                 "orderSeq": order_seq,
@@ -111,6 +124,7 @@ class ClaudeTimelineReducer:
                 "type": "message",
                 "status": "done",
                 "role": event.role,
+                "parentItemId": parent_item_id,
                 "content": content,
                 "source": source,
                 "orderSeq": order_seq,

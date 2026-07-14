@@ -77,6 +77,9 @@ data class RemoteTimelineItem(
     val orderSeq: Int,
     val updatedSeq: Int,
     val createdAt: String,
+    // Set when this item is sub-agent (Task tool) output; holds the timeline id
+    // of the parent Task card so the UI can nest it under that card.
+    val parentItemId: String? = null,
 )
 
 data class RemoteApproval(

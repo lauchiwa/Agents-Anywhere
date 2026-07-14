@@ -70,6 +70,9 @@ data class TimelineMessage(
     val updatedSeq: Int = 0,
     val clientMessageId: String? = null,
     val turnId: String? = null,
+    // Timeline id of the parent Task (sub-agent) card, when this item was
+    // produced inside a sub-agent. Null for top-level conversation items.
+    val parentItemId: String? = null,
     val optimistic: Boolean = false,
 )
 

@@ -33,6 +33,7 @@ export function ToolCard({
   token,
   session,
   approval,
+  childrenContent,
   resolvingApprovalId,
   resolvingStatus,
   onResolveApproval,
@@ -41,6 +42,7 @@ export function ToolCard({
   token: string
   session: SessionView
   approval?: Approval
+  childrenContent?: React.ReactNode
   resolvingApprovalId: string | null
   resolvingStatus: ApprovalResolveStatus | null
   onResolveApproval: (approvalId: string, status: ApprovalResolveStatus) => void
@@ -84,6 +86,7 @@ export function ToolCard({
               />
             </div>
           ) : null}
+          {childrenContent}
         </CollapsibleContent>
       </div>
     </Collapsible>

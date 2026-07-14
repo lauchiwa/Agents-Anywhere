@@ -657,6 +657,7 @@ class SessionDetailController(
             updatedSeq = updatedSeq,
             clientMessageId = source.text("clientMessageId"),
             turnId = turnId,
+            parentItemId = parentItemId,
         )
     }
 
@@ -681,6 +682,7 @@ class SessionDetailController(
                 updatedSeq = updatedSeq,
                 clientMessageId = source.text("clientMessageId"),
                 turnId = turnId,
+                parentItemId = parentItemId,
             )
         }
         val message = content.text("message") ?: content.text("text") ?: kind
@@ -699,6 +701,7 @@ class SessionDetailController(
             updatedSeq = updatedSeq,
             clientMessageId = source.text("clientMessageId"),
             turnId = turnId,
+            parentItemId = parentItemId,
         )
     }
 
@@ -724,6 +727,7 @@ class SessionDetailController(
             updatedSeq = updatedSeq,
             clientMessageId = source.text("clientMessageId"),
             turnId = turnId,
+            parentItemId = parentItemId,
         )
     }
 
@@ -754,6 +758,7 @@ class SessionDetailController(
             updatedSeq = updatedSeq,
             clientMessageId = source.text("clientMessageId"),
             turnId = turnId,
+            parentItemId = parentItemId,
         )
     }
 
@@ -774,6 +779,7 @@ class SessionDetailController(
             updatedSeq = updatedSeq,
             clientMessageId = source.text("clientMessageId"),
             turnId = turnId,
+            parentItemId = parentItemId,
         )
     }
 

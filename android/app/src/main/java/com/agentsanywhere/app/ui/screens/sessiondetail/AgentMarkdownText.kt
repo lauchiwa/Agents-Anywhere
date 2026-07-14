@@ -60,6 +60,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -157,10 +158,13 @@ private fun MarkdownBlocks(
     onOpenFile: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
 ) {
-    nodes.forEach { node ->
+    var index = 0
+    while (index < nodes.size) {
+        val node = nodes[index]
         when (node) {
             is Paragraph -> {
                 val standaloneCode = node.children().singleOrNull() as? Code
+                val transcript = reconstructPreformattedText(node.children())
                 if (standaloneCode != null && standaloneCode.literal.needsWrappingCode()) {
                     MarkdownWrappingCodeChip(
                         code = standaloneCode.literal,
@@ -168,6 +172,39 @@ private fun MarkdownBlocks(
                         styles = styles,
                         onOpenFile = onOpenFile,
                     )
+                } else if (transcript.looksLikeToolTranscript()) {
+                    // The agent sometimes pastes a raw tool-execution transcript
+                    // (e.g. `Tool results: [Read] 1\tpackage ...`, cat -n output)
+                    // straight into its reply as plain prose. Without a code
+                    // fence, commonmark collapses every newline into a space, so
+                    // the line numbers and code mash into one unreadable run.
+                    // Detect that shape and render it verbatim in a monospace,
+                    // line-preserving, collapsible block instead. Normal prose
+                    // never matches (the trigger is intentionally narrow), so
+                    // this only rescues the transcript case.
+                    //
+                    // A single pasted transcript often has blank lines in it, so
+                    // commonmark splits it into several sibling paragraphs. Left
+                    // alone those would render as several separate collapsible
+                    // blocks (one logical dump, many boxes). Greedily merge the
+                    // run of consecutive transcript paragraphs back into one,
+                    // restoring the blank-line gaps between them.
+                    val parts = mutableListOf(transcript)
+                    var next = index + 1
+                    while (next < nodes.size) {
+                        val sibling = nodes[next] as? Paragraph ?: break
+                        val siblingText = reconstructPreformattedText(sibling.children())
+                        if (!siblingText.looksLikeToolTranscript()) break
+                        parts += siblingText
+                        next++
+                    }
+                    ToolTranscriptBlock(
+                        text = parts.joinToString("\n\n"),
+                        darkMode = darkMode,
+                        styles = styles,
+                    )
+                    index = next
+                    continue
                 } else {
                     MarkdownInlineText(node.children(), styles.body, styles, onOpenFile, onOpenUrl)
                 }
@@ -201,6 +238,7 @@ private fun MarkdownBlocks(
                 if (children.isNotEmpty()) MarkdownBlocks(children, darkMode, styles, onOpenFile, onOpenUrl)
             }
         }
+        index++
     }
 }
 
@@ -274,6 +312,14 @@ private fun MarkdownQuote(
     }
 }
 
+// GFM tables render badly on a narrow phone: fixed-width columns either clip or
+// force horizontal scrolling, and multi-line cells wreck the grid. Instead we
+// flatten each row into a bullet line — first cell as the lead label, the rest
+// joined inline after an em-dash — which wraps naturally to screen width. The
+// header row is dropped: on phones the row content is usually self-describing
+// (e.g. "H1 — ..."), and a header line would just add a stray, label-less row.
+// Cell inline formatting (bold, code, links) is preserved because we reference
+// the original cell child nodes in a fresh list rather than re-parsing text.
 @Composable
 private fun MarkdownTable(
     table: TableBlock,
@@ -282,34 +328,44 @@ private fun MarkdownTable(
     onOpenFile: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .horizontalScroll(rememberScrollState())
-            .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, styles.border, RoundedCornerShape(8.dp)),
-    ) {
-        table.tableRows().forEachIndexed { rowIndex, row ->
-            Row {
-                row.children().filterIsInstance<TableCell>().forEach { cell ->
-                    val cellStyle = styles.tableCell(
-                        header = cell.isHeader,
-                        alignment = cell.alignment,
+    val rows = table.tableRows()
+    val headerRow = rows.firstOrNull { row ->
+        row.children().filterIsInstance<TableCell>().any { it.isHeader }
+    }
+    val bodyRows = rows.filter { it !== headerRow }
+    // Nothing but a header (rare) — fall back to showing it so we never render
+    // an empty block.
+    val renderRows = bodyRows.ifEmpty { listOfNotNull(headerRow) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        renderRows.forEach { row ->
+            val cells = row.children().filterIsInstance<TableCell>()
+            if (cells.isEmpty()) return@forEach
+            val merged = buildList<Node> {
+                cells.forEachIndexed { index, cell ->
+                    val cellNodes = cell.children()
+                    if (cellNodes.isEmpty()) return@forEachIndexed
+                    if (isNotEmpty()) add(Text(if (index == 1) "  —  " else "   "))
+                    addAll(cellNodes)
+                }
+            }
+            if (merged.isEmpty()) return@forEach
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "-",
+                    color = styles.muted,
+                    fontSize = 16.sp,
+                    lineHeight = 24.sp,
+                    fontFamily = FontFamily.SansSerif,
+                )
+                Box(modifier = Modifier.weight(1f)) {
+                    MarkdownInlineText(
+                        nodes = merged,
+                        textStyle = styles.body,
+                        styles = styles,
+                        onOpenFile = onOpenFile,
+                        onOpenUrl = onOpenUrl,
                     )
-                    Box(
-                        modifier = Modifier
-                            .widthIn(min = 112.dp, max = 240.dp)
-                            .background(if (cell.isHeader || rowIndex == 0) styles.codeBackground else Color.Transparent)
-                            .border(0.5.dp, styles.border)
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                    ) {
-                        MarkdownInlineText(
-                            nodes = cell.children(),
-                            textStyle = cellStyle,
-                            styles = styles.copy(bodyColor = cellStyle.color),
-                            onOpenFile = onOpenFile,
-                            onOpenUrl = onOpenUrl,
-                        )
-                    }
                 }
             }
         }
@@ -503,6 +559,102 @@ private fun MarkdownWrappingCodeChip(
 }
 
 private fun String.needsWrappingCode(): Boolean = length > 30 || any { it.isWhitespace() }
+
+// Rebuild the paragraph's original multi-line text. commonmark turns the source
+// line breaks inside a paragraph into SoftLineBreak nodes (which normal
+// rendering flattens into spaces); mapping them back to '\n' recovers the shape
+// the agent actually pasted, so a tool transcript can be detected and shown
+// verbatim.
+private fun reconstructPreformattedText(nodes: List<Node>): String {
+    val sb = StringBuilder()
+    fun walk(list: List<Node>) {
+        list.forEach { node ->
+            when (node) {
+                is Text -> sb.append(node.literal)
+                is Code -> sb.append(node.literal)
+                is SoftLineBreak, is HardLineBreak -> sb.append('\n')
+                is HtmlInline -> sb.append(node.literal)
+                else -> walk(node.children())
+            }
+        }
+    }
+    walk(nodes)
+    return sb.toString()
+}
+
+// Tool-execution transcripts the agent occasionally pastes into its prose. The
+// trigger is deliberately narrow so ordinary replies never match: either the
+// literal "Tool results:" header, or a line that opens with a known tool tag
+// like [Read] / [Bash] / [Edit] followed by cat -n style numbered output.
+private val ToolTagLineRegex = Regex("""(?m)^\s*\[(Read|Bash|Edit|Write|Grep|Glob|LS|Task|WebFetch|WebSearch|MultiEdit|NotebookEdit)]""")
+
+private fun String.looksLikeToolTranscript(): Boolean {
+    if (isBlank()) return false
+    if (contains("Tool results:")) return true
+    return ToolTagLineRegex.containsMatchIn(this)
+}
+
+@Composable
+private fun ToolTranscriptBlock(
+    text: String,
+    darkMode: Boolean,
+    styles: MarkdownStyles,
+) {
+    val lineCount = remember(text) { text.count { it == '\n' } + 1 }
+    // Collapsed by default, mirroring the timeline's "> Ran …" cards: the raw
+    // transcript is noise the reader rarely wants inline, so we hide it behind a
+    // tappable header and only reveal it on demand.
+    var expanded by remember(text) { mutableStateOf(false) }
+    val muted = styles.muted
+    val collapsedSurface = if (darkMode) Color(0x1018181B) else Color(0x12F1F0ED)
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 34.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(collapsedSurface)
+                .noRippleClickable { expanded = !expanded }
+                .padding(horizontal = 6.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (expanded) ChevronDownGlyph(muted) else ChevronRightGlyph(muted)
+            Text(
+                text = "Tool results",
+                modifier = Modifier.weight(1f),
+                color = muted,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+            )
+            Text(
+                text = "$lineCount 行",
+                color = muted,
+                fontSize = 12.sp,
+            )
+        }
+        if (expanded) {
+            Text(
+                text = text.trimEnd(),
+                color = styles.bodyColor,
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(styles.codeBackground)
+                    .border(1.dp, styles.codeBorder, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            )
+        }
+    }
+}
 
 private fun isBashLabel(label: String): Boolean {
     val lower = label.lowercase()
@@ -882,17 +1034,45 @@ private fun normalizeMarkdownTables(markdown: String): String {
     var inFence = false
 
     lines.forEachIndexed { index, line ->
+        val nextLine = lines.getOrNull(index + 1)
+        val prevLine = lines.getOrNull(index - 1)
+
+        // A table header sitting directly on top of a paragraph needs a blank
+        // line before it, or commonmark folds it into that paragraph.
         if (
             !inFence &&
-            index + 1 < lines.size &&
+            nextLine != null &&
             isPotentialTableHeaderRow(line) &&
-            isTableDelimiterRow(lines[index + 1]) &&
+            isDelimiterRow(nextLine) &&
             normalized.lastOrNull()?.isNotBlank() == true
         ) {
             normalized += ""
         }
 
-        normalized += line
+        // Agents sometimes emit a delimiter row whose column count doesn't match
+        // the header (e.g. a 3-column header followed by "|---|"). GFM requires
+        // the counts to match, otherwise the whole block is rejected and rendered
+        // as one run-on paragraph (soft line breaks collapse into spaces). When we
+        // see a delimiter directly under a header, rebuild it to the header's
+        // column count so the table parses. Well-formed tables already match and
+        // are left untouched.
+        val repaired = if (
+            !inFence &&
+            prevLine != null &&
+            isDelimiterRow(line) &&
+            isPotentialTableHeaderRow(prevLine)
+        ) {
+            val headerColumns = splitTableRowCells(prevLine).size
+            if (splitTableRowCells(line).size != headerColumns) {
+                rebuildDelimiterRow(line, headerColumns)
+            } else {
+                null
+            }
+        } else {
+            null
+        }
+
+        normalized += repaired ?: line
 
         if (line.isMarkdownFenceBoundary()) {
             inFence = !inFence
@@ -900,6 +1080,27 @@ private fun normalizeMarkdownTables(markdown: String): String {
     }
 
     return normalized.joinToString("\n")
+}
+
+// Loose delimiter check for the repair path. A well-formed GFM delimiter needs
+// >= 2 cells (isTableDelimiterRow), but the broken input we're fixing may have
+// collapsed to a single "|---|" cell. Require at least one cell, all dashes, and
+// at least one pipe so a bare "---" setext underline is never mistaken for a
+// table delimiter.
+private fun isDelimiterRow(line: String): Boolean {
+    if (!line.contains('|')) return false
+    val cells = splitTableRowCells(line)
+    return cells.isNotEmpty() && cells.all { it.trim().matches(TableDelimiterCellRegex) }
+}
+
+// Rebuild a table delimiter row to exactly `columns` cells, preserving any
+// alignment markers (":---", "---:", ":---:") already specified and filling the
+// rest with plain "---".
+private fun rebuildDelimiterRow(line: String, columns: Int): String {
+    val existing = splitTableRowCells(line).map { it.trim() }
+    return (0 until columns).joinToString(" | ", prefix = "| ", postfix = " |") { index ->
+        existing.getOrNull(index)?.takeIf { it.isNotEmpty() } ?: "---"
+    }
 }
 
 private fun isPotentialTableHeaderRow(line: String): Boolean {

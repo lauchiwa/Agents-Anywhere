@@ -374,6 +374,7 @@ class SessionsApi(
             orderSeq = optInt("orderSeq", 0),
             updatedSeq = optInt("updatedSeq", 0),
             createdAt = optString("createdAt", ""),
+            parentItemId = optNullableString("parentItemId"),
         )
     }
 

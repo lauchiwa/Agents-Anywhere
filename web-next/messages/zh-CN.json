@@ -632,7 +632,9 @@
       "toolToolFallback": "工具",
       "showCode": "显示代码",
       "hideCode": "隐藏代码",
-      "loadCodeFailed": "无法加载代码"
+      "loadCodeFailed": "无法加载代码",
+      "toolResults": "工具结果",
+      "toolResultsLines": "{count} 行"
     },
     "sessionStatus": {
       "error": "错误",

@@ -633,6 +633,9 @@ class TimelineItemIn(BaseModel):
     type: TimelineType
     status: TimelineStatus
     role: TimelineRole | None = None
+    # Set when this item is sub-agent (Task tool) output: the timeline id of the
+    # parent Task item it belongs under. Null for top-level conversation items.
+    parentItemId: str | None = None
     content: Any = Field(default_factory=dict)
     source: TimelineSource
     orderSeq: int

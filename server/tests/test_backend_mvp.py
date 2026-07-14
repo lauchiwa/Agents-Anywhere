@@ -697,8 +697,20 @@ def test_rpc_manager_expires_stale_connector_heartbeats():
 
 
 def test_old_replaced_connection_unregister_does_not_remove_current_connection():
-    manager = ConnectorRpcManager()
+    # New contract (PR #19): re-registering the same connector while the old
+    # connection is still within the heartbeat window is rejected with
+    # DuplicateConnectorConnectionError. A replacement only happens once the
+    # old connection has expired. Drive that path with a controllable clock,
+    # then verify the stale handle cannot evict the live replacement.
+    now = 0.0
+
+    def clock() -> float:
+        return now
+
+    manager = ConnectorRpcManager(heartbeat_timeout_seconds=60, clock=clock)
     old = manager.register("conn_1", FakeWebSocket())  # type: ignore[arg-type]
+
+    now = 61.0
     current = manager.register("conn_1", FakeWebSocket())  # type: ignore[arg-type]
 
     assert manager.unregister("conn_1", old) is False
@@ -4575,11 +4587,42 @@ def test_session_updated_sync_timestamps_do_not_rearm_unread(tmp_path):
 
 
 def test_dashboard_events_route_precedes_session_events(tmp_path):
+    # FastAPI 0.139 no longer flattens included routers into APIRoute entries
+    # on app.router.routes (they are wrapped and expose no .path), so the old
+    # path-index probe cannot see these routes. Assert the real invariant
+    # instead: resolve each path through actual route matching (which honours
+    # declaration order/precedence) and confirm the dashboard path is served by
+    # the dashboard endpoint rather than being swallowed by /{session_id}/events.
+    from starlette.routing import Match
+
     client = make_client(tmp_path)
-    paths = [getattr(route, "path", "") for route in client.app.router.routes]
-    dashboard_index = paths.index("/sessions/events/dashboard")
-    session_events_index = paths.index("/sessions/{session_id}/events")
-    assert dashboard_index < session_events_index
+
+    def resolve_endpoint(path: str) -> str | None:
+        scope = {"type": "http", "method": "GET", "path": path}
+
+        def first_full_match(routes) -> str | None:
+            for route in routes:
+                match, _ = route.matches(scope)
+                if match != Match.FULL:
+                    continue
+                endpoint = getattr(route, "endpoint", None)
+                if endpoint is not None:
+                    return getattr(endpoint, "__name__", None)
+                # FastAPI 0.139 wraps included routers (_IncludedRouter) and
+                # exposes the concrete routes via original_router; descend into
+                # it so we resolve the real endpoint honouring declaration order.
+                original = getattr(route, "original_router", None)
+                inner = getattr(original, "routes", None)
+                if inner:
+                    resolved = first_full_match(inner)
+                    if resolved is not None:
+                        return resolved
+            return None
+
+        return first_full_match(client.app.router.routes)
+
+    assert resolve_endpoint("/sessions/events/dashboard") == "dashboard_events"
+    assert resolve_endpoint("/sessions/some-session-id/events") == "session_events"
 
 
 def test_existing_connector_session_metadata_sync_does_not_rearm_unread(tmp_path):

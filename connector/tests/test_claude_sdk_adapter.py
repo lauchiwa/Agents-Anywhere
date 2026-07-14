@@ -403,6 +403,7 @@ async def test_claude_sdk_adapter_streams_timeline_and_updates_external_session(
         "message",
         "tool",
         "message",
+        "tool",
         "turn.end",
     ]
     assert timeline[1]["role"] == "user"
@@ -429,6 +430,13 @@ async def test_claude_sdk_adapter_streams_timeline_and_updates_external_session(
     assert timeline[4]["id"] == timeline[2]["id"]
     assert timeline[4]["status"] == "done"
     assert timeline[4]["revision"] == timeline[2]["revision"] + 1
+    # The Bash tool_use never received a tool_result (turn ended first), so the
+    # turn-end sweep force-finalizes it instead of leaving it stranded at
+    # "running". Same id as the running tool, status flipped to the turn status.
+    assert timeline[5]["id"] == timeline[3]["id"]
+    assert timeline[5]["type"] == "tool"
+    assert timeline[5]["status"] == "done"
+    assert timeline[5]["revision"] == timeline[3]["revision"] + 1
     assert timeline[-1]["status"] == "done"
 
     updates = [params for method, params in notifications if method == "session.updated"]

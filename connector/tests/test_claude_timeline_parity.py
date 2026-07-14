@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from connector.claude.normalizers import ClaudeLiveNormalizer, ClaudeTranscriptNormalizer
+from connector.claude.timeline_identity import ClaudeTimelineIdentity
 from connector.claude.timeline_reducer import ClaudeTimelineReducer
 
 
@@ -250,3 +251,75 @@ def test_claude_task_event_tools_are_filtered_from_live_and_transcript_timelines
     assert [item["content"].get("text") for item in transcript_items] == ["Done."]
     assert all(item["type"] != "tool" for item in live_items)
     assert all(item["type"] != "tool" for item in transcript_items)
+
+
+def test_claude_subagent_output_is_linked_to_parent_task_item():
+    # A real Task (sub-agent) tool_use, followed by sub-agent-internal output
+    # that carries parent_tool_use_id pointing back at the Task. The sub-agent
+    # message and its tool call must be attributed to the parent Task's item id
+    # via parentItemId, while the Task item itself has no parent.
+    raw_turn = [
+        {
+            "uuid": "evt_task",
+            "session_id": "claude_sess_1",
+            "timestamp": "2026-06-04T00:00:01Z",
+            "message": {
+                "id": "msg_task",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_task_1",
+                        "name": "Task",
+                        "input": {"description": "investigate"},
+                    }
+                ],
+            },
+        },
+        {
+            "uuid": "evt_sub_text",
+            "session_id": "claude_sess_1",
+            "timestamp": "2026-06-04T00:00:02Z",
+            "parent_tool_use_id": "toolu_task_1",
+            "message": {
+                "id": "msg_sub_text",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Reading files."}],
+            },
+        },
+        {
+            "uuid": "evt_sub_tool",
+            "session_id": "claude_sess_1",
+            "timestamp": "2026-06-04T00:00:03Z",
+            "parent_tool_use_id": "toolu_task_1",
+            "message": {
+                "id": "msg_sub_tool",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_sub_bash",
+                        "name": "Bash",
+                        "input": {"command": "ls"},
+                    }
+                ],
+            },
+        },
+    ]
+
+    reducer = ClaudeTimelineReducer()
+    for normalizer in (ClaudeLiveNormalizer(), ClaudeTranscriptNormalizer()):
+        items = reducer.reduce(
+            session_id="sess_1",
+            turn_id="turn_1",
+            events=normalizer.normalize(raw_turn),
+        )
+        by_source = {item["source"]["itemId"]: item for item in items}
+        task_item = by_source["toolu_task_1"]
+        sub_text = by_source["msg_sub_text"]
+        sub_tool = by_source["toolu_sub_bash"]
+
+        # The Task card is top-level; sub-agent output points back to its id.
+        assert task_item.get("parentItemId") is None
+        assert sub_text["parentItemId"] == task_item["id"]
+        assert sub_tool["parentItemId"] == task_item["id"]
