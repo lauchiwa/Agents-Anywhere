@@ -15,3 +15,11 @@ captures/
 *.aab
 *.ap_
 *.hprof
+
+# Signing keys — NEVER commit. Keystores and their passwords stay local
+# (passwords live in local.properties, already ignored above). Losing this
+# key means you can't ship updates to an already-installed release build.
+*.jks
+*.keystore
+keystore/
+release-keystore/

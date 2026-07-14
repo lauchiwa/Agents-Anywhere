@@ -1,8 +1,27 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
+
+// Release signing credentials are read from local.properties (git-ignored) so
+// the keystore password never lands in version control. Keys expected:
+//   releaseStoreFile=release-keystore/agents-anywhere-release.jks
+//   releaseStorePassword=...
+//   releaseKeyAlias=agents-anywhere
+//   releaseKeyPassword=...   (same as store password for PKCS12 keystores)
+// If any key is missing the release build falls back to unsigned so a fresh
+// checkout without the keystore still configures.
+val signingProps = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        file.inputStream().use { load(it) }
+    }
+}
+val hasReleaseSigning = signingProps.getProperty("releaseStoreFile") != null &&
+    rootProject.file(signingProps.getProperty("releaseStoreFile", "")).exists()
 
 android {
     namespace = "com.agentsanywhere.app"
@@ -20,6 +39,20 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = rootProject.file(signingProps.getProperty("releaseStoreFile"))
+                storePassword = signingProps.getProperty("releaseStorePassword")
+                keyAlias = signingProps.getProperty("releaseKeyAlias")
+                // PKCS12 keystores use one password for store and key; fall back
+                // to the store password when a separate key password is absent.
+                keyPassword = signingProps.getProperty("releaseKeyPassword")
+                    ?: signingProps.getProperty("releaseStorePassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -27,6 +60,12 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            // Only attach the release signingConfig when the keystore is present.
+            // A checkout without it still builds (unsigned release) instead of
+            // failing configuration.
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
