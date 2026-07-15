@@ -206,6 +206,10 @@ def init_db_sync(async_url: str) -> None:
 async def _ensure_compat_schema_async(conn) -> None:  # noqa: ANN001 - SQLAlchemy connection
     if not await _column_exists_async(conn, "sessions", "origin"):
         await conn.execute(text("ALTER TABLE sessions ADD COLUMN origin TEXT NOT NULL DEFAULT 'connector_import'"))
+    if not await _column_exists_async(conn, "sessions", "context_usage_json"):
+        await conn.execute(text("ALTER TABLE sessions ADD COLUMN context_usage_json TEXT"))
+    if not await _column_exists_async(conn, "sessions", "rate_limit_json"):
+        await conn.execute(text("ALTER TABLE sessions ADD COLUMN rate_limit_json TEXT"))
 
 
 async def _column_exists_async(conn, table: str, column: str) -> bool:  # noqa: ANN001 - SQLAlchemy connection
@@ -227,6 +231,10 @@ async def _column_exists_async(conn, table: str, column: str) -> bool:  # noqa: 
 def _ensure_compat_schema_sync(conn) -> None:  # noqa: ANN001 - SQLAlchemy connection
     if not _column_exists_sync(conn, "sessions", "origin"):
         conn.execute(text("ALTER TABLE sessions ADD COLUMN origin TEXT NOT NULL DEFAULT 'connector_import'"))
+    if not _column_exists_sync(conn, "sessions", "context_usage_json"):
+        conn.execute(text("ALTER TABLE sessions ADD COLUMN context_usage_json TEXT"))
+    if not _column_exists_sync(conn, "sessions", "rate_limit_json"):
+        conn.execute(text("ALTER TABLE sessions ADD COLUMN rate_limit_json TEXT"))
 
 
 def _column_exists_sync(conn, table: str, column: str) -> bool:  # noqa: ANN001 - SQLAlchemy connection

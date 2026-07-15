@@ -230,6 +230,8 @@ sessions = Table(
     Column("last_synced_at", Text),
     Column("source_observed_at", Text),
     Column("last_activity_at", Text),
+    Column("context_usage_json", Text),
+    Column("rate_limit_json", Text),
     Column("seq", Integer, nullable=False),
     Column("updated_seq", Integer, nullable=False),
     Column("created_at", Text, nullable=False),

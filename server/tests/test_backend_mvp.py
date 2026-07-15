@@ -4586,6 +4586,127 @@ def test_session_updated_sync_timestamps_do_not_rearm_unread(tmp_path):
         assert session["unread"] is False
 
 
+def test_session_updated_context_usage_round_trips(tmp_path):
+    client = make_client(tmp_path)
+    _, access_token, session_id, headers = create_connector_and_session(client)
+
+    with client.websocket_connect(
+        "/connector/ws",
+        headers={"Authorization": f"Bearer {access_token}"},
+    ) as ws:
+        ws.send_json(
+            {
+                "type": "notification",
+                "method": "session.updated",
+                "params": {
+                    "sessionId": session_id,
+                    "runtime": "codex",
+                    "lastSyncedAt": "2026-06-08T00:00:01Z",
+                    "contextUsage": {
+                        "totalTokens": 1050,
+                        "maxTokens": 200000,
+                        "percentage": 0.5,
+                        "autoCompactEnabled": True,
+                    },
+                },
+            }
+        )
+
+        def read_gauge():
+            sessions = client.get("/sessions", headers=headers).json()["sessions"]
+            current = next(session for session in sessions if session["id"] == session_id)
+            return current if current.get("contextUsage") else None
+
+        session = wait_for(read_gauge)
+        gauge = session["contextUsage"]
+        assert gauge["totalTokens"] == 1050
+        assert gauge["maxTokens"] == 200000
+        assert gauge["percentage"] == 0.5
+        assert gauge["autoCompactEnabled"] is True
+
+
+def test_session_updated_permission_mode_persists_to_override(tmp_path):
+    # After an approved ExitPlanMode, the connector switches the live client out
+    # of plan mode and reports the execute mode on session.updated. The server
+    # must persist it to the session's runtime-settings override so later turns
+    # run in execute mode instead of re-entering plan.
+    client = make_client(tmp_path)
+    _, access_token, session_id, headers = create_connector_and_session(client)
+
+    # Start in plan mode via the override.
+    patch = client.patch(
+        f"/sessions/{session_id}/runtime-settings",
+        headers=headers,
+        json={"settings": {"permissionMode": "plan"}},
+    )
+    assert patch.status_code == 200
+    assert patch.json()["runtimeSettingsOverride"]["permissionMode"] == "plan"
+
+    with client.websocket_connect(
+        "/connector/ws",
+        headers={"Authorization": f"Bearer {access_token}"},
+    ) as ws:
+        ws.send_json(
+            {
+                "type": "notification",
+                "method": "session.updated",
+                "params": {
+                    "sessionId": session_id,
+                    "runtime": "claude",
+                    "lastSyncedAt": "2026-06-08T00:00:02Z",
+                    "permissionMode": "acceptEdits",
+                },
+            }
+        )
+
+        def read_mode():
+            resp = client.get(f"/sessions/{session_id}/runtime-settings", headers=headers)
+            override = resp.json().get("runtimeSettingsOverride") or {}
+            return override if override.get("permissionMode") == "acceptEdits" else None
+
+        override = wait_for(read_mode)
+        assert override["permissionMode"] == "acceptEdits"
+
+
+def test_session_updated_rate_limit_round_trips(tmp_path):
+    client = make_client(tmp_path)
+    _, access_token, session_id, headers = create_connector_and_session(client)
+
+    with client.websocket_connect(
+        "/connector/ws",
+        headers={"Authorization": f"Bearer {access_token}"},
+    ) as ws:
+        ws.send_json(
+            {
+                "type": "notification",
+                "method": "session.updated",
+                "params": {
+                    "sessionId": session_id,
+                    "runtime": "codex",
+                    "lastSyncedAt": "2026-06-08T00:00:01Z",
+                    "rateLimit": {
+                        "status": "allowed_warning",
+                        "type": "five_hour",
+                        "resetsAt": 1_800_000_000,
+                        "utilization": 0.92,
+                    },
+                },
+            }
+        )
+
+        def read_rate_limit():
+            sessions = client.get("/sessions", headers=headers).json()["sessions"]
+            current = next(session for session in sessions if session["id"] == session_id)
+            return current if current.get("rateLimit") else None
+
+        session = wait_for(read_rate_limit)
+        rate_limit = session["rateLimit"]
+        assert rate_limit["status"] == "allowed_warning"
+        assert rate_limit["type"] == "five_hour"
+        assert rate_limit["resetsAt"] == 1_800_000_000
+        assert rate_limit["utilization"] == 0.92
+
+
 def test_dashboard_events_route_precedes_session_events(tmp_path):
     # FastAPI 0.139 no longer flattens included routers into APIRoute entries
     # on app.router.routes (they are wrapped and expose no .path), so the old

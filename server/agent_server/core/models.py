@@ -34,6 +34,7 @@ ApprovalKind = Literal[
     "permission",
     "tool_call",
     "input_request",
+    "question",
     "unknown",
 ]
 
@@ -573,6 +574,14 @@ class SessionView(BaseModel):
     updatedSeq: int
     runtimeSettings: dict[str, Any] | None = None
     runtimeSettingsOverride: dict[str, Any] | None = None
+    # Latest context-window usage gauge (totalTokens/maxTokens/percentage/
+    # autoCompactEnabled), captured from the connector's get_context_usage()
+    # after each turn. None until a runtime that reports it (Claude) runs.
+    contextUsage: dict[str, Any] | None = None
+    # Latest rate-limit snapshot (status/type/resetsAt/utilization), from the
+    # connector's RateLimitEvent handling. None when not throttled (or the
+    # runtime does not report it); set while quota is warning or rejected.
+    rateLimit: dict[str, Any] | None = None
 
 
 class SessionPatchRequest(BaseModel):
@@ -671,7 +680,7 @@ class ApprovalIn(BaseModel):
     title: str
     description: str | None = None
     payload: Any = Field(default_factory=dict)
-    choices: list[Literal["approve", "approve_for_session", "reject", "cancel"]]
+    choices: list[Literal["approve", "approve_for_session", "reject", "cancel", "answer"]]
     source: ApprovalSource
     createdAt: str | None = None
     resolvedAt: str | None = None

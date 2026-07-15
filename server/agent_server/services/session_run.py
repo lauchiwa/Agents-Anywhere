@@ -327,6 +327,50 @@ class SessionRunService:
             await self._store.refresh_session_status_from_timeline(session_id)
         return RpcResponsePayload(ok=True, result=result)
 
+    async def apply_live_runtime_switch(
+        self,
+        session_id: str,
+        settings: dict[str, Any],
+        *,
+        user_id: str,
+    ) -> None:
+        # Best-effort mid-turn switch: after a runtime-settings patch persists the
+        # override (which already takes effect on the next turn), push the change
+        # onto the in-flight connector client so it applies immediately. Failures
+        # here are swallowed — the persisted override is the source of truth, and a
+        # missing live switch must never fail the patch. Only model /
+        # permissionMode have live SDK setters; everything else waits for the next
+        # turn.
+        if not isinstance(settings, dict):
+            return
+        try:
+            session = await self._store.get_session(session_id, user_id=user_id)
+        except KeyError:
+            return
+        if session.runtime != "claude":
+            return
+        if not self._manager.is_online(session.connectorId):
+            return
+        calls: list[tuple[str, dict[str, Any]]] = []
+        if "model" in settings:
+            calls.append(("runtime.setModel", {"model": settings.get("model")}))
+        if "permissionMode" in settings:
+            calls.append(
+                ("runtime.setPermissionMode", {"permissionMode": settings.get("permissionMode")})
+            )
+        for method, extra in calls:
+            params = {"sessionId": session_id, "runtime": session.runtime, **extra}
+            if session.externalSessionId:
+                params["externalSessionId"] = session.externalSessionId
+            # Await inline (short timeout): the RPC must round-trip within the
+            # request's event loop, since a task spawned here would be dropped
+            # when the request scope closes. Any failure is swallowed — the
+            # persisted override already applies on the next turn regardless.
+            try:
+                await self._manager.request(session.connectorId, method, params, timeout=10)
+            except (ConnectorOfflineError, ConnectorRpcError):
+                continue
+
 
 def _interrupt_target_not_found(result: object) -> bool:
     if not isinstance(result, dict):

@@ -285,6 +285,7 @@ async def patch_session_runtime_settings(
     user_id: str = Depends(current_user_id),
     db: Store = Depends(get_store),
     runtime_config: RuntimeConfigService = Depends(get_runtime_config_service),
+    run_service: SessionRunService = Depends(get_session_run_service),
 ) -> RuntimeSettingsResponse:
     try:
         override = await runtime_config.patch_session_runtime_settings(
@@ -302,6 +303,15 @@ async def patch_session_runtime_settings(
         raise HTTPException(status_code=404, detail="session not found") from None
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    # The override above already makes model / permissionMode stick for the next
+    # turn. Additionally push a best-effort live switch so a turn that's running
+    # right now picks up the change immediately; failures (connector offline, no
+    # active client) are swallowed since the persisted override still applies.
+    await run_service.apply_live_runtime_switch(
+        session_id,
+        settings=payload.settings,
+        user_id=user_id,
+    )
     return RuntimeSettingsResponse(
         sessionId=session_id,
         runtime=session.runtime,

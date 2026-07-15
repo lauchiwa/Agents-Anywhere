@@ -38,6 +38,7 @@ class ApprovalService:
         approval_id: str,
         status: str,
         *,
+        selections: list | None = None,
         user_id: str,
     ) -> RpcResponsePayload:
         try:
@@ -54,17 +55,20 @@ class ApprovalService:
                 pending_approval.targetItemId,
                 pending_approval.source.requestId,
             )
+            rpc_params = {
+                "approvalId": approval_id,
+                "status": status,
+                "requestId": pending_approval.source.requestId,
+                "sessionId": session.id,
+                "runtime": session.runtime,
+                "externalSessionId": session.externalSessionId,
+            }
+            if selections:
+                rpc_params["selections"] = selections
             result = await self._manager.request(
                 session.connectorId,
                 "approval.resolve",
-                {
-                    "approvalId": approval_id,
-                    "status": status,
-                    "requestId": pending_approval.source.requestId,
-                    "sessionId": session.id,
-                    "runtime": session.runtime,
-                    "externalSessionId": session.externalSessionId,
-                },
+                rpc_params,
             )
             logger.info(
                 "approval resolve connector confirmed approval_id={} status={} session_id={} result={}",

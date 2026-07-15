@@ -510,7 +510,21 @@ async def apply_connector_notification(
                 last_synced_at=params.get("lastSyncedAt"),
                 source_observed_at=params.get("sourceObservedAt"),
                 last_activity_at=params.get("lastActivityAt"),
+                context_usage=_context_usage_param(params),
+                rate_limit=_rate_limit_param(params),
             )
+            # An approved ExitPlanMode makes the connector send permissionMode back
+            # so later turns run in execute mode instead of re-entering plan. Merge
+            # it into the session's runtime-settings override (the source of truth
+            # start_turn reads), rather than the session snapshot.
+            plan_exit_mode = _permission_mode_param(params)
+            if plan_exit_mode is not None:
+                override = await db.get_session_runtime_settings_override(session_id)
+                if override.get("permissionMode") != plan_exit_mode:
+                    await db.set_session_runtime_settings_override(
+                        session_id,
+                        {**override, "permissionMode": plan_exit_mode},
+                    )
             await db.refresh_session_status_from_timeline(session_id)
             return IngestEffect(session_id=session_id, session_changed=True)
         except KeyError:
@@ -692,6 +706,14 @@ async def _resolve_approval_session_id(
         )
     except KeyError:
         return approval.sessionId
+
+
+def _context_usage_param(params: dict[str, Any]) -> dict[str, Any] | None:
+    # The connector's session.updated carries an optional contextUsage gauge
+    # (get_context_usage() snapshot). Only accept a well-formed object so a
+    # malformed payload can't poison the stored column.
+    value = params.get("contextUsage")
+    return value if isinstance(value, dict) else None
 
 
 def _local_session_state(params: dict[str, Any]) -> str:

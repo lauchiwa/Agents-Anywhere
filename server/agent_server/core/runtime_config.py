@@ -78,6 +78,7 @@ DEFAULT_RUNTIME_SETTINGS: dict[str, dict[str, Any]] = {
         "permissionMode": "acceptEdits",
         "model": None,
         "effort": None,
+        "maxTurns": None,
     },
     "codex": {
         "permissionMode": "ask",
