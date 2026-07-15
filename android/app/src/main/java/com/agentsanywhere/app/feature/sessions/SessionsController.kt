@@ -6,6 +6,8 @@ import com.agentsanywhere.app.api.FilesApi
 import com.agentsanywhere.app.api.SessionsApi
 import com.agentsanywhere.app.api.RemoteDevice
 import com.agentsanywhere.app.api.RemoteSession
+import com.agentsanywhere.app.api.toContextUsage
+import com.agentsanywhere.app.api.toRateLimit
 import com.agentsanywhere.app.feature.auth.AuthSessionStore
 import com.agentsanywhere.app.feature.devices.toAgentDevice
 import com.agentsanywhere.app.model.AgentDevice
@@ -310,6 +312,8 @@ class SessionsController(
             runtimeSettingsOverride = runtimeSettingsOverride,
             live = statusValue == SessionStatus.Running || statusValue == SessionStatus.WaitingApproval,
             sortKey = sortAt ?: lastActivityAt ?: lastItemAt ?: "",
+            contextUsage = contextUsage?.toContextUsage(),
+            rateLimit = rateLimit?.toRateLimit(),
         )
     }
 

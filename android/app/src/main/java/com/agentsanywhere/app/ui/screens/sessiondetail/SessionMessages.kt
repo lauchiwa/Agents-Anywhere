@@ -62,6 +62,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,6 +71,7 @@ import androidx.compose.ui.unit.sp
 import com.agentsanywhere.app.R
 import com.agentsanywhere.app.feature.sessiondetail.MessageAuthor
 import com.agentsanywhere.app.feature.sessiondetail.SessionDetailController
+import com.agentsanywhere.app.feature.sessiondetail.SubagentProgress
 import com.agentsanywhere.app.feature.sessiondetail.TimelineAttachment
 import com.agentsanywhere.app.feature.sessiondetail.TimelineMessage
 import com.agentsanywhere.app.feature.sessiondetail.TimelineMessageKind
@@ -79,6 +81,9 @@ import com.valentinilk.shimmer.shimmer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import java.time.Duration
+import java.time.Instant
+import java.time.format.DateTimeParseException
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -843,6 +848,7 @@ private fun TimelineMessageRow(
             onOpenFile = onOpenFile,
         )
         TimelineMessageKind.System -> ToolPlaceholder(message, darkMode)
+        TimelineMessageKind.Compact -> CompactSeparator(message, darkMode)
         TimelineMessageKind.Text -> when (message.author) {
             MessageAuthor.User -> UserBubble(message, darkMode, sessionId, controller, onPreviewAttachment, onCopyMessage)
             MessageAuthor.Agent -> AgentMarkdownText(message.text, darkMode, onOpenFile = onOpenFile)
@@ -1087,8 +1093,56 @@ private fun UserFileAttachmentCard(
 }
 
 @Composable
+private fun CompactSeparator(message: TimelineMessage, darkMode: Boolean) {
+    // Context-compaction boundary: the CLI dropped earlier history to reclaim
+    // the window. Render a centered, non-expandable divider so the user
+    // understands why a chunk of the conversation vanished; the subtitle carries
+    // the "N -> M" token counts when the connector supplied them.
+    val muted = if (darkMode) Color(0xFFA1A1AA) else Color(0xFF7C7B76)
+    val line = if (darkMode) Color(0x33FFFFFF) else Color(0x1F000000)
+    val label = if (message.subtitle.isNotBlank()) {
+        stringResource(R.string.session_context_compacted_tokens, message.subtitle)
+    } else {
+        stringResource(R.string.session_context_compacted)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(line),
+        )
+        Text(
+            text = label,
+            color = muted,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(line),
+        )
+    }
+}
+
+@Composable
 private fun ReasoningSection(message: TimelineMessage, darkMode: Boolean) {
     val muted = if (darkMode) Color(0xFFA1A1AA) else Color(0xFF7C7B76)
+    val streaming = message.status == "running"
+    val durationSeconds = if (streaming) null else reasoningDurationSeconds(message)
+    val label = when {
+        streaming -> stringResource(R.string.session_reasoning_thinking)
+        durationSeconds != null -> stringResource(R.string.session_reasoning_duration, durationSeconds)
+        else -> stringResource(R.string.session_reasoning)
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1106,21 +1160,39 @@ private fun ReasoningSection(message: TimelineMessage, darkMode: Boolean) {
                 sizeDp = 14,
             )
             Text(
-                text = message.title.ifBlank { stringResource(R.string.session_reasoning) },
+                text = label,
                 color = muted,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
             )
         }
-        if (message.text.isNotBlank()) {
+        if (message.redacted) {
             Text(
-                text = message.text,
+                text = stringResource(R.string.session_reasoning_redacted),
                 color = muted,
                 fontSize = 14.sp,
                 lineHeight = 21.sp,
+                fontStyle = FontStyle.Italic,
                 fontWeight = FontWeight.Medium,
             )
+        } else if (message.text.isNotBlank()) {
+            AgentMarkdownText(message.text, darkMode)
         }
+    }
+}
+
+// Thinking duration is derived client-side from the item's own timestamps: the
+// connector stamps createdAt when the reasoning block opens and completedAt when
+// it converges. Returns null when either bound is missing or unparseable, or the
+// span is under a second (nothing worth showing).
+private fun reasoningDurationSeconds(message: TimelineMessage): Long? {
+    val startedRaw = message.createdAt.ifBlank { return null }
+    val finishedRaw = message.completedAt?.ifBlank { null } ?: return null
+    return try {
+        val seconds = Duration.between(Instant.parse(startedRaw), Instant.parse(finishedRaw)).seconds
+        seconds.takeIf { it > 0 }
+    } catch (_: DateTimeParseException) {
+        null
     }
 }
 
@@ -1208,6 +1280,7 @@ private fun ToolActivityCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            message.subagent?.let { SubagentProgressPill(progress = it, darkMode = darkMode) }
             CompactStatusPill(label = message.badge.ifBlank { message.status }, darkMode = darkMode)
         }
         if (expanded && expandable) {
@@ -1270,6 +1343,7 @@ private fun SubagentChildren(
                         onOpenFile = onOpenFile,
                     )
                     TimelineMessageKind.System -> ToolPlaceholder(child, darkMode)
+                    TimelineMessageKind.Compact -> CompactSeparator(child, darkMode)
                     TimelineMessageKind.Text -> when (child.author) {
                         MessageAuthor.Agent -> AgentMarkdownText(child.text, darkMode, onOpenFile = onOpenFile)
                         else -> AgentMarkdownText(child.text, darkMode, onOpenFile = onOpenFile)
@@ -1500,6 +1574,57 @@ private fun CompactStatusPill(label: String, darkMode: Boolean) {
             maxLines = 1,
         )
     }
+}
+
+// Compact sub-agent progress pill shown on the parent Agent tool card header.
+// While running it shows a "Sub-agent running" hint; once finished it collapses
+// to the token/duration usage summary the connector folded in.
+@Composable
+private fun SubagentProgressPill(progress: SubagentProgress, darkMode: Boolean) {
+    val label = if (progress.finished) {
+        val parts = mutableListOf<String>()
+        if (progress.totalTokens > 0) {
+            parts += stringResource(R.string.session_subagent_tokens, formatCompactCount(progress.totalTokens))
+        }
+        if (progress.durationMs > 0) {
+            val seconds = (progress.durationMs / 100L) / 10.0
+            parts += stringResource(R.string.session_subagent_duration, formatSeconds(seconds))
+        }
+        parts.joinToString(" · ").ifBlank { progress.status }
+    } else {
+        stringResource(R.string.session_subagent_running)
+    }
+    if (label.isBlank()) return
+    Row(
+        modifier = Modifier
+            .height(20.dp)
+            .clip(CircleShape)
+            .background(if (darkMode) Color(0xFF1E3A34) else Color(0xFFDCEFE7))
+            .padding(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            color = if (darkMode) Color(0xFF7DD3B0) else Color(0xFF2F7A5E),
+            fontSize = 11.sp,
+            lineHeight = 11.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
+    }
+}
+
+private fun formatCompactCount(value: Long): String {
+    return when {
+        value >= 1_000_000 -> "${(value / 100_000L) / 10.0}M"
+        value >= 1_000 -> "${(value / 100L) / 10.0}k"
+        else -> value.toString()
+    }
+}
+
+private fun formatSeconds(seconds: Double): String {
+    return if (seconds % 1.0 == 0.0) seconds.toLong().toString() else seconds.toString()
 }
 
 @Composable

@@ -23,6 +23,34 @@ data class AgentSession(
     val runtimeSettingsOverride: Map<String, Any?> = emptyMap(),
     val live: Boolean,
     val sortKey: String,
+    // Context-window occupancy gauge (from the connector's get_context_usage()).
+    // Null until the first turn reports it, or when the runtime doesn't emit it.
+    val contextUsage: ContextUsage? = null,
+    // Rate-limit snapshot (from the connector's RateLimitEvent). Null until the
+    // first event; status "allowed" means no warning, "allowed_warning"/
+    // "rejected" surface a quota banner with the reset time.
+    val rateLimit: RateLimit? = null,
+)
+
+// Compact context-window gauge shown in the session header: how full the
+// context is and whether autocompact is about to fire.
+data class ContextUsage(
+    val totalTokens: Long? = null,
+    val maxTokens: Long? = null,
+    val percentage: Double? = null,
+    val autoCompactEnabled: Boolean = false,
+    val autoCompactThreshold: Long? = null,
+)
+
+// Rate-limit state shown in the session header. status "allowed" hides the
+// badge; "allowed_warning"/"rejected" show a quota warning with the reset time.
+data class RateLimit(
+    val status: String? = null,
+    val type: String? = null,
+    val resetsAt: Long? = null,
+    val utilization: Double? = null,
+    val overageStatus: String? = null,
+    val overageResetsAt: Long? = null,
 )
 
 enum class SessionStatus {

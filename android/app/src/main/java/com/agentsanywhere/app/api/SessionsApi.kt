@@ -269,11 +269,28 @@ class SessionsApi(
         authorizationToken: String,
         approvalId: String,
         status: String,
+        selections: List<ApprovalSelectionInput> = emptyList(),
     ): RemoteRpcResponse {
+        val body = JSONObject().put("status", status)
+        if (selections.isNotEmpty()) {
+            // AskUserQuestion answers: [{"question": str, "labels": [str, ...]}, ...].
+            body.put(
+                "selections",
+                JSONArray().apply {
+                    selections.forEach { selection ->
+                        put(
+                            JSONObject()
+                                .put("question", selection.question)
+                                .put("labels", JSONArray(selection.labels)),
+                        )
+                    }
+                },
+            )
+        }
         return client.postJson(
             serverUrl = serverUrl,
             path = "/approvals/${approvalId.urlEncode()}/resolve",
-            body = JSONObject().put("status", status),
+            body = body,
             authorizationToken = authorizationToken,
         ).toRemoteRpcResponse()
     }
@@ -300,6 +317,7 @@ class SessionsApi(
             updatedSeq = optInt("updatedSeq", 0),
             runtimeSettings = optJSONObject("runtimeSettings").toMap(),
             runtimeSettingsOverride = optJSONObject("runtimeSettingsOverride").toMap(),
+            contextUsage = optJSONObject("contextUsage")?.toRemoteContextUsage(),
         )
     }
 
@@ -374,6 +392,7 @@ class SessionsApi(
             orderSeq = optInt("orderSeq", 0),
             updatedSeq = optInt("updatedSeq", 0),
             createdAt = optString("createdAt", ""),
+            completedAt = optNullableString("completedAt"),
             parentItemId = optNullableString("parentItemId"),
         )
     }
@@ -389,8 +408,28 @@ class SessionsApi(
             title = optString("title", "Permission request"),
             description = optNullableString("description"),
             choices = optJSONArray("choices").toStringList(),
+            questions = optJSONObject("payload")
+                ?.optJSONObject("input")
+                ?.optJSONArray("questions")
+                .toObjectList { toRemoteApprovalQuestion() },
             updatedSeq = optInt("updatedSeq", 0),
             createdAt = optString("createdAt", ""),
+        )
+    }
+
+    private fun JSONObject.toRemoteApprovalQuestion(): RemoteApprovalQuestion {
+        return RemoteApprovalQuestion(
+            header = optNullableString("header"),
+            question = optString("question", ""),
+            multiSelect = optBoolean("multiSelect", false),
+            options = optJSONArray("options").toObjectList { toRemoteApprovalQuestionOption() },
+        )
+    }
+
+    private fun JSONObject.toRemoteApprovalQuestionOption(): RemoteApprovalQuestionOption {
+        return RemoteApprovalQuestionOption(
+            label = optString("label", ""),
+            description = optNullableString("description"),
         )
     }
 

@@ -12,11 +12,13 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,16 +26,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -64,8 +72,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import com.agentsanywhere.app.R
+import com.agentsanywhere.app.api.ApprovalSelectionInput
 import com.agentsanywhere.app.api.UploadFilePart
 import com.agentsanywhere.app.feature.files.FilesController
+import com.agentsanywhere.app.feature.sessiondetail.ApprovalQuestion
 import com.agentsanywhere.app.feature.sessiondetail.SessionDetailController
 import com.agentsanywhere.app.feature.sessiondetail.SessionDetailState
 import com.agentsanywhere.app.feature.sessiondetail.SessionStreamEvent
@@ -586,10 +596,14 @@ fun SessionDetailScreen(
         }
     }
 
-    fun resolveApproval(approval: TimelineApproval, status: String) {
+    fun resolveApproval(
+        approval: TimelineApproval,
+        status: String,
+        selections: List<ApprovalSelectionInput> = emptyList(),
+    ) {
         state = state.copy(approvals = state.approvals.filterNot { it.id == approval.id })
         scope.launch {
-            controller.resolveApproval(approval.id, status)
+            controller.resolveApproval(approval.id, status, selections)
                 .onFailure { error ->
                     val message = error.message ?: context.getString(R.string.session_approval_resolve_failed)
                     state = state.copy(actionError = message)
@@ -830,6 +844,7 @@ fun SessionDetailScreen(
                             onLeftClick = { showRuntimeSettings = true },
                             onRightClick = { scope.launch { pagerState.animateScrollToPage(1) } },
                             modifier = Modifier.align(Alignment.TopCenter),
+                            contextUsage = state.session?.contextUsage,
                         )
                         AAToastHost(
                             hostState = snackbarHostState,
@@ -915,6 +930,7 @@ fun SessionDetailScreen(
             approval = approval,
             onDismiss = {},
             onResolve = { status -> resolveApproval(approval, status) },
+            onAnswer = { selections -> resolveApproval(approval, "approved", selections) },
         )
     }
 
@@ -1113,7 +1129,13 @@ private fun ApprovalDialog(
     approval: TimelineApproval,
     onDismiss: () -> Unit,
     onResolve: (String) -> Unit,
+    onAnswer: (List<ApprovalSelectionInput>) -> Unit,
 ) {
+    // AskUserQuestion: let the user pick from the options rather than approve/reject.
+    if (approval.kind == "question" || "answer" in approval.choices) {
+        QuestionDialog(approval = approval, onDismiss = onDismiss, onAnswer = onAnswer, onSkip = { onResolve("rejected") })
+        return
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(approval.title) },
@@ -1143,6 +1165,141 @@ private fun ApprovalDialog(
             }
         },
     )
+}
+
+// The "__other__" sentinel marks the free-text option; its real value comes from
+// the text field rather than the label.
+private const val APPROVAL_OTHER_VALUE = "__other__"
+
+@Composable
+private fun QuestionDialog(
+    approval: TimelineApproval,
+    onDismiss: () -> Unit,
+    onAnswer: (List<ApprovalSelectionInput>) -> Unit,
+    onSkip: () -> Unit,
+) {
+    // Per-question chosen labels (multi allows several) plus free-text "Other" input,
+    // keyed by question index so toggling "Other" off keeps the typed value.
+    val selected = remember { mutableStateMapOf<Int, List<String>>() }
+    val otherText = remember { mutableStateMapOf<Int, String>() }
+
+    fun toggle(qIndex: Int, label: String, multi: Boolean) {
+        val current = selected[qIndex] ?: emptyList()
+        selected[qIndex] = if (multi) {
+            if (label in current) current - label else current + label
+        } else {
+            if (label in current) emptyList() else listOf(label)
+        }
+    }
+
+    // Resolve each question's chosen labels, substituting typed text for "Other".
+    // Questions with no selection are omitted.
+    fun buildSelections(): List<ApprovalSelectionInput> =
+        approval.questions.mapIndexedNotNull { qIndex, question ->
+            val chosen = selected[qIndex] ?: emptyList()
+            val labels = chosen.mapNotNull { label ->
+                if (label == APPROVAL_OTHER_VALUE) otherText[qIndex]?.trim()?.takeIf { it.isNotEmpty() } else label
+            }
+            if (labels.isEmpty()) null else ApprovalSelectionInput(question = question.question, labels = labels)
+        }
+
+    val selections = buildSelections()
+    val canSubmit = approval.questions.isNotEmpty() && selections.size == approval.questions.size
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 480.dp)
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(approval.title, fontWeight = FontWeight.SemiBold)
+
+                approval.questions.forEachIndexed { qIndex, question ->
+                    val multi = question.multiSelect
+                    val chosen = selected[qIndex] ?: emptyList()
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        question.header?.let { header ->
+                            Text(
+                                header.uppercase(),
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        Text(question.question)
+                        question.options.forEach { option ->
+                            OptionRow(
+                                label = option.label,
+                                description = option.description,
+                                active = option.label in chosen,
+                                onClick = { toggle(qIndex, option.label, multi) },
+                            )
+                        }
+                        val otherActive = APPROVAL_OTHER_VALUE in chosen
+                        OptionRow(
+                            label = stringResource(R.string.session_question_other),
+                            description = null,
+                            active = otherActive,
+                            onClick = { toggle(qIndex, APPROVAL_OTHER_VALUE, multi) },
+                        )
+                        if (otherActive) {
+                            OutlinedTextField(
+                                value = otherText[qIndex] ?: "",
+                                onValueChange = { otherText[qIndex] = it },
+                                placeholder = { Text(stringResource(R.string.session_question_other_placeholder)) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = onSkip) {
+                        Text(stringResource(R.string.session_question_skip))
+                    }
+                    TextButton(
+                        onClick = { if (canSubmit) onAnswer(selections) },
+                        enabled = canSubmit,
+                    ) {
+                        Text(stringResource(R.string.session_question_submit))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OptionRow(
+    label: String,
+    description: String?,
+    active: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text(label, fontWeight = FontWeight.Medium)
+            description?.let {
+                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
 }
 
 private fun Context.pendingAttachment(uri: Uri): PendingAttachment? {

@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,12 +23,16 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agentsanywhere.app.R
+import com.agentsanywhere.app.model.ContextUsage
+import com.agentsanywhere.app.model.RateLimit
 import com.agentsanywhere.app.ui.designsystem.noRippleClickable
+import kotlin.math.roundToInt
 
 @Composable
 internal fun SessionDetailHeader(
@@ -36,6 +41,8 @@ internal fun SessionDetailHeader(
     onLeftClick: () -> Unit,
     onRightClick: () -> Unit,
     modifier: Modifier = Modifier,
+    contextUsage: ContextUsage? = null,
+    rateLimit: RateLimit? = null,
 ) {
     val surface = if (darkMode) Color(0xF218181B) else Color(0xF2FFFFFF)
     val border = if (darkMode) Color(0xFF27272A) else Color(0xFFE8E5DE)
@@ -70,14 +77,73 @@ internal fun SessionDetailHeader(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = title,
-                color = text,
-                fontSize = 15.5.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            val gaugePercent = contextUsage?.let { usage ->
+                usage.percentage ?: run {
+                    val total = usage.totalTokens
+                    val max = usage.maxTokens
+                    if (total != null && max != null && max > 0L) total.toDouble() / max * 100.0 else null
+                }
+            }
+            val thresholdPercent = contextUsage?.let { usage ->
+                val threshold = usage.autoCompactThreshold
+                val max = usage.maxTokens
+                if (threshold != null && max != null && max > 0L) threshold.toDouble() / max * 100.0 else 80.0
+            } ?: 80.0
+            val nearCompact = contextUsage?.autoCompactEnabled == true &&
+                gaugePercent != null && gaugePercent >= thresholdPercent
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = title,
+                    color = text,
+                    fontSize = if (gaugePercent != null) 14.sp else 15.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (gaugePercent != null) {
+                    val gaugeColor = if (nearCompact) {
+                        Color(0xFFDC6A5B)
+                    } else if (darkMode) {
+                        Color(0xFF8A8A8F)
+                    } else {
+                        Color(0xFF8C8B85)
+                    }
+                    Text(
+                        text = stringResource(
+                            R.string.session_context_usage,
+                            gaugePercent.roundToInt(),
+                        ),
+                        color = gaugeColor,
+                        fontSize = 11.sp,
+                        lineHeight = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                    )
+                }
+                val rateStatus = rateLimit?.status
+                if (rateStatus == "allowed_warning" || rateStatus == "rejected") {
+                    val rejected = rateStatus == "rejected"
+                    // Distinct throttle indicator below the gauge: an amber
+                    // "quota almost full" warning, or a red "rate limited" when
+                    // the CLI is actively throttling. Hidden once status is back
+                    // to "allowed" (the connector keeps the snapshot current).
+                    val rateColor = if (rejected) Color(0xFFDC6A5B) else Color(0xFFE0973A)
+                    Text(
+                        text = if (rejected) {
+                            stringResource(R.string.session_rate_limited)
+                        } else {
+                            stringResource(R.string.session_rate_limit_warning)
+                        },
+                        color = rateColor,
+                        fontSize = 11.sp,
+                        lineHeight = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                    )
+                }
+            }
         }
         HeaderImageButton(
             resId = if (darkMode) {

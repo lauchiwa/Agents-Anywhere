@@ -1,12 +1,15 @@
 package com.agentsanywhere.app.feature.sessiondetail
 
 import com.agentsanywhere.app.api.ApiException
+import com.agentsanywhere.app.api.ApprovalSelectionInput
 import com.agentsanywhere.app.api.RemoteApproval
 import com.agentsanywhere.app.api.RemoteRuntimeConfigField
 import com.agentsanywhere.app.api.RemoteRuntimeConfigOption
 import com.agentsanywhere.app.api.RemoteRuntimeConfigSchema
 import com.agentsanywhere.app.api.RemoteRuntimeSettings
 import com.agentsanywhere.app.api.RemoteSession
+import com.agentsanywhere.app.api.toContextUsage
+import com.agentsanywhere.app.api.toRateLimit
 import com.agentsanywhere.app.api.RemoteSessionEvent
 import com.agentsanywhere.app.api.RemoteTimelineItem
 import com.agentsanywhere.app.api.RemoteUploadedAttachment
@@ -325,11 +328,21 @@ class SessionDetailController(
         }
     }
 
-    suspend fun resolveApproval(approvalId: String, status: String): Result<Unit> {
+    suspend fun resolveApproval(
+        approvalId: String,
+        status: String,
+        selections: List<ApprovalSelectionInput> = emptyList(),
+    ): Result<Unit> {
         return withContext(Dispatchers.IO) {
             runCatching {
                 val auth = authSession()
-                sessionsApi.resolveApproval(auth.serverUrl, auth.accessToken, approvalId, status)
+                sessionsApi.resolveApproval(
+                    auth.serverUrl,
+                    auth.accessToken,
+                    approvalId,
+                    status,
+                    selections,
+                )
                 Unit
             }
         }
@@ -524,6 +537,19 @@ class SessionDetailController(
             kind = kind,
             status = status,
             choices = choices,
+            questions = questions.map { question ->
+                ApprovalQuestion(
+                    header = question.header,
+                    question = question.question,
+                    multiSelect = question.multiSelect,
+                    options = question.options.map { option ->
+                        ApprovalQuestionOption(
+                            label = option.label,
+                            description = option.description,
+                        )
+                    },
+                )
+            },
             updatedSeq = updatedSeq,
         )
     }
@@ -634,6 +660,21 @@ class SessionDetailController(
                     subtitle = content.text("server") ?: "mcp",
                 )
             )
+            "schedule_wakeup" -> {
+                val delay = content.text("delaySeconds")?.let { formatDelaySeconds(it) }
+                val title = if (delay != null) "Scheduled wake-up in $delay" else "Scheduled wake-up"
+                listOf(toToolCallMessage(title = title, subtitle = content.text("reason").orEmpty()))
+            }
+            "task_stop" -> {
+                val target = content.text("target")
+                val title = if (target != null) "Stopped sub-agent $target" else "Stopped sub-agent"
+                listOf(toToolCallMessage(title = title, subtitle = target.orEmpty()))
+            }
+            "tool_search" -> {
+                val query = content.text("query")
+                val title = if (query != null) "Searched tools for $query" else "Searched tools"
+                listOf(toToolCallMessage(title = title, subtitle = query.orEmpty()))
+            }
             else -> listOf(toToolCallMessage(title = shortToolTitle(), subtitle = content.text("kind").orEmpty()))
         }
     }
@@ -681,6 +722,35 @@ class SessionDetailController(
                 orderSeq = orderSeq,
                 updatedSeq = updatedSeq,
                 clientMessageId = source.text("clientMessageId"),
+                turnId = turnId,
+                parentItemId = parentItemId,
+                createdAt = createdAt,
+                completedAt = completedAt,
+                redacted = content.text("redacted") == "true",
+            )
+        }
+        if (kind == "compact") {
+            // Context-compaction separator. Carry the before/after token counts
+            // in the subtitle ("160,000 -> 42,000 tokens") when the connector
+            // supplied them; the card renders a non-expandable divider.
+            val pre = if (content.has("preTokens")) content.optLong("preTokens", -1L) else -1L
+            val post = if (content.has("postTokens")) content.optLong("postTokens", -1L) else -1L
+            val subtitle = if (pre >= 0 && post >= 0) {
+                "${"%,d".format(pre)} → ${"%,d".format(post)}"
+            } else {
+                ""
+            }
+            return TimelineMessage(
+                id = id,
+                sourceItemId = id,
+                author = MessageAuthor.Tool,
+                text = "",
+                status = status,
+                type = type,
+                kind = TimelineMessageKind.Compact,
+                subtitle = subtitle,
+                orderSeq = orderSeq,
+                updatedSeq = updatedSeq,
                 turnId = turnId,
                 parentItemId = parentItemId,
             )
@@ -780,7 +850,19 @@ class SessionDetailController(
             clientMessageId = source.text("clientMessageId"),
             turnId = turnId,
             parentItemId = parentItemId,
+            subagent = content.subagentProgress(),
         )
+    }
+
+    private fun formatDelaySeconds(raw: String): String? {
+        val total = raw.toDoubleOrNull()?.toInt() ?: return null
+        val seconds = total.coerceAtLeast(0)
+        if (seconds < 60) return "${seconds}s"
+        val minutes = Math.round(seconds / 60.0).toInt()
+        if (minutes < 60) return "${minutes}m"
+        val hours = minutes / 60
+        val rem = minutes % 60
+        return if (rem == 0) "${hours}h" else "${hours}h ${rem}m"
     }
 
     private fun RemoteTimelineItem.shortToolTitle(): String {
@@ -823,6 +905,8 @@ class SessionDetailController(
             runtimeSettingsOverride = runtimeSettingsOverride,
             live = statusValue == SessionStatus.Running || statusValue == SessionStatus.WaitingApproval,
             sortKey = sortAt ?: lastActivityAt ?: lastItemAt ?: "",
+            contextUsage = contextUsage?.toContextUsage(),
+            rateLimit = rateLimit?.toRateLimit(),
         )
     }
 
@@ -869,6 +953,21 @@ class SessionDetailController(
     private fun JSONObject.records(name: String): List<JSONObject> {
         val array = optJSONArray(name) ?: return emptyList()
         return List(array.length()) { index -> array.optJSONObject(index) }.filterNotNull()
+    }
+
+    // Sub-agent (Agent tool) progress rides on the parent tool card's
+    // content.subagent (see connector _emit_task_progress); a real-time-only
+    // signal, absent on ordinary tool cards.
+    private fun JSONObject.subagentProgress(): SubagentProgress? {
+        val subagent = optJSONObject("subagent") ?: return null
+        val usage = subagent.optJSONObject("usage")
+        return SubagentProgress(
+            status = subagent.text("status").orEmpty(),
+            finished = subagent.optBoolean("finished", false),
+            totalTokens = usage?.optLong("totalTokens", 0L) ?: 0L,
+            toolUses = usage?.optLong("toolUses", 0L) ?: 0L,
+            durationMs = usage?.optLong("durationMs", 0L) ?: 0L,
+        )
     }
 
     private fun JSONObject.fileChangeVerb(): String {

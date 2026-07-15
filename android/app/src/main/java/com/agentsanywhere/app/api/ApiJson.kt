@@ -50,6 +50,27 @@ internal fun JSONArray?.toStringList(): List<String> {
     return List(length()) { index -> optString(index) }.filter { it.isNotBlank() }
 }
 
+internal fun JSONObject.toRemoteContextUsage(): RemoteContextUsage {
+    return RemoteContextUsage(
+        totalTokens = if (has("totalTokens") && !isNull("totalTokens")) optLong("totalTokens") else null,
+        maxTokens = if (has("maxTokens") && !isNull("maxTokens")) optLong("maxTokens") else null,
+        percentage = if (has("percentage") && !isNull("percentage")) optDouble("percentage") else null,
+        autoCompactEnabled = optBoolean("autoCompactEnabled", false),
+        autoCompactThreshold = if (has("autoCompactThreshold") && !isNull("autoCompactThreshold")) optLong("autoCompactThreshold") else null,
+    )
+}
+
+internal fun JSONObject.toRemoteRateLimit(): RemoteRateLimit {
+    return RemoteRateLimit(
+        status = optNullableString("status"),
+        type = optNullableString("type"),
+        resetsAt = if (has("resetsAt") && !isNull("resetsAt")) optLong("resetsAt") else null,
+        utilization = if (has("utilization") && !isNull("utilization")) optDouble("utilization") else null,
+        overageStatus = optNullableString("overageStatus"),
+        overageResetsAt = if (has("overageResetsAt") && !isNull("overageResetsAt")) optLong("overageResetsAt") else null,
+    )
+}
+
 internal fun String.urlEncode(): String {
     return java.net.URLEncoder.encode(this, Charsets.UTF_8.name()).replace("+", "%20")
 }

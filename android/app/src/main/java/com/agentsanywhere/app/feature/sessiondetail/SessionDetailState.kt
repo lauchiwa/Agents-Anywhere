@@ -74,6 +74,26 @@ data class TimelineMessage(
     // produced inside a sub-agent. Null for top-level conversation items.
     val parentItemId: String? = null,
     val optimistic: Boolean = false,
+    // ISO timestamp the item converged to a terminal state. Paired with the
+    // item's creation time it yields a reasoning block's thinking duration.
+    val createdAt: String = "",
+    val completedAt: String? = null,
+    // True for a redacted (encrypted) reasoning block whose prose is withheld;
+    // the card still renders so the user knows the model reasoned.
+    val redacted: Boolean = false,
+    // Sub-agent (Agent tool) progress folded onto the parent tool card as
+    // content.subagent. Real-time-only; null for ordinary tool cards.
+    val subagent: SubagentProgress? = null,
+)
+
+// Live progress of a spawned sub-agent, surfaced on its parent Agent tool card.
+// finished is true once the sub-agent reaches a terminal status.
+data class SubagentProgress(
+    val status: String = "",
+    val finished: Boolean = false,
+    val totalTokens: Long = 0,
+    val toolUses: Long = 0,
+    val durationMs: Long = 0,
 )
 
 data class TimelineAttachment(
@@ -99,7 +119,21 @@ data class TimelineApproval(
     val kind: String,
     val status: String,
     val choices: List<String>,
+    // AskUserQuestion questions; empty for plain permission approvals.
+    val questions: List<ApprovalQuestion>,
     val updatedSeq: Int,
+)
+
+data class ApprovalQuestion(
+    val header: String?,
+    val question: String,
+    val multiSelect: Boolean,
+    val options: List<ApprovalQuestionOption>,
+)
+
+data class ApprovalQuestionOption(
+    val label: String,
+    val description: String?,
 )
 
 sealed interface SessionStreamEvent {
@@ -131,4 +165,8 @@ enum class TimelineMessageKind {
     FileChange,
     ToolCall,
     System,
+    // Context-compaction boundary: a non-expandable separator ("context
+    // compacted: N -> M tokens") the connector emits where the CLI auto-
+    // compacted the window, so the user knows why earlier history vanished.
+    Compact,
 }
