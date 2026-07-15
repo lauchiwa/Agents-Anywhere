@@ -10,6 +10,7 @@ import type {
   ArchiveAllScope,
   AttachmentUploadResponse,
   ApprovalResolveStatus,
+  ApprovalSelection,
   ConnectorCreateResponse,
   ConnectorListResponse,
   ConnectorResponse,
@@ -524,10 +525,14 @@ export class DashboardApi {
     token: string,
     approvalId: string,
     status: ApprovalResolveStatus,
+    selections?: ApprovalSelection[],
   ): Promise<RpcResponse<unknown>> {
     return this.client.post<RpcResponse<unknown>>(
       `/approvals/${encodeURIComponent(approvalId)}/resolve`,
-      { status },
+      {
+        status,
+        ...(selections && selections.length > 0 ? { selections } : {}),
+      },
       { token },
     );
   }

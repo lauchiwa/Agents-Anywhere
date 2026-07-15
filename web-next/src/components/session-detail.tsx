@@ -21,6 +21,7 @@ import { dashboardApi } from "@/features/dashboard/api"
 import type {
   Approval,
   ApprovalResolveStatus,
+  ApprovalSelection,
   RuntimeConfigSchema,
   SessionStateResponse,
   SessionView,
@@ -664,12 +665,16 @@ export function SessionDetail({
     }
   }
 
-  const handleResolveApproval = async (approvalId: string, status: ApprovalResolveStatus) => {
+  const handleResolveApproval = async (
+    approvalId: string,
+    status: ApprovalResolveStatus,
+    selections?: ApprovalSelection[],
+  ) => {
     if (resolvingApprovalId) return
     setResolvingApprovalId(approvalId)
     setResolvingStatus(status)
     try {
-      await dashboardApi.resolveApproval(token, approvalId, status)
+      await dashboardApi.resolveApproval(token, approvalId, status, selections)
       await refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : tSession("resolveApprovalFailed"))
@@ -1075,7 +1080,11 @@ function ToolRunGroup({
   childrenByParent: Map<string, TimelineItem[]>
   resolvingApprovalId: string | null
   resolvingStatus: ApprovalResolveStatus | null
-  onResolveApproval: (approvalId: string, status: ApprovalResolveStatus) => void
+  onResolveApproval: (
+    approvalId: string,
+    status: ApprovalResolveStatus,
+    selections?: ApprovalSelection[],
+  ) => void
 }) {
   const tSession = useTranslations("dashboard.session")
   const [open, setOpen] = React.useState(false)

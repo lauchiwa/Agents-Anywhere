@@ -12,7 +12,7 @@ import { openSessionFilePreview } from "@/components/markdown-text"
 import { cn } from "@/lib/utils"
 import { highlightCode } from "@/lib/code-highlight"
 import { dashboardApi } from "@/features/dashboard/api"
-import type { Approval, ApprovalResolveStatus, SessionView, TimelineItem } from "@/features/dashboard/types"
+import type { Approval, ApprovalResolveStatus, ApprovalSelection, SessionView, TimelineItem } from "@/features/dashboard/types"
 import { useTranslations } from "next-intl"
 import { commandText, firstTextOf, recordsOf, textOf } from "@/components/session/session-utils"
 
@@ -45,7 +45,11 @@ export function ToolCard({
   childrenContent?: React.ReactNode
   resolvingApprovalId: string | null
   resolvingStatus: ApprovalResolveStatus | null
-  onResolveApproval: (approvalId: string, status: ApprovalResolveStatus) => void
+  onResolveApproval: (
+    approvalId: string,
+    status: ApprovalResolveStatus,
+    selections?: ApprovalSelection[],
+  ) => void
 }) {
   const tSession = useTranslations("dashboard.session")
   const kind = timelineToolKind(item)
@@ -63,6 +67,7 @@ export function ToolCard({
             <ChevronDown className="size-3.5 shrink-0 -rotate-90 transition-transform group-data-[state=open]:rotate-0" />
             <ToolIcon kind={kind} status={item.status} />
             <span className="code-mono min-w-0 flex-1 truncate text-sm">{title}</span>
+            <SubagentProgressBadge item={item} />
             <TimelineStatusBadge status={item.status} />
           </button>
         </CollapsibleTrigger>
@@ -118,7 +123,41 @@ export function timelineToolTitle(
           ? `${textOf(item.content.server) || tSession("toolMcpFallback")} / ${
               textOf(item.content.tool) || tSession("toolToolFallback")
             }`
-          : kind
+          : kind === "schedule_wakeup"
+            ? scheduleWakeupTitle(item, tSession)
+            : kind === "task_stop"
+              ? (() => {
+                  const target = textOf(item.content.target)
+                  return target
+                    ? tSession("toolStoppedTask", { target })
+                    : tSession("toolStoppedTaskFallback")
+                })()
+              : kind === "tool_search"
+                ? (() => {
+                    const query = textOf(item.content.query)
+                    return query
+                      ? tSession("toolSearchedTools", { query })
+                      : tSession("toolSearchedToolsFallback")
+                  })()
+                : kind
+}
+
+function scheduleWakeupTitle(
+  item: TimelineItem,
+  tSession: (key: string, values?: Record<string, string | number>) => string,
+): string {
+  const delay = numberOf(item.content.delaySeconds)
+  if (delay === null) return tSession("toolScheduledWakeupFallback")
+  return tSession("toolScheduledWakeup", { delay: formatDelaySeconds(delay) })
+}
+
+function formatDelaySeconds(seconds: number): string {
+  // Compact human delay: seconds under a minute, whole minutes under an hour,
+  // else hours. ScheduleWakeup delays are clamped to [60, 3600] in practice,
+  // but stay defensive for out-of-range values.
+  if (seconds < 60) return `${seconds}s`
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`
+  return `${Math.round(seconds / 360) / 10}h`
 }
 
 export function ToolDetailPanel({
@@ -387,6 +426,53 @@ export function TimelineStatusBadge({ status }: { status: TimelineItem["status"]
   return (
     <Badge variant={variant} className="h-5 text-[11px] font-normal">
       {status}
+    </Badge>
+  )
+}
+
+// Sub-agent (Agent tool) progress rides on the parent tool card as
+// content.subagent (see connector _emit_task_progress). It is a real-time-only
+// signal — status plus a token/tool-use/duration usage summary — so a compact
+// header badge is the least intrusive way to surface it without competing with
+// the card's own tool output.
+function subagentProgressOf(item: TimelineItem): Record<string, unknown> | null {
+  const content = item.content
+  if (!content || typeof content !== "object") return null
+  const subagent = (content as Record<string, unknown>).subagent
+  if (!subagent || typeof subagent !== "object" || Array.isArray(subagent)) return null
+  return subagent as Record<string, unknown>
+}
+
+function numberOf(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null
+}
+
+export function SubagentProgressBadge({ item }: { item: TimelineItem }) {
+  const tSession = useTranslations("dashboard.session")
+  const subagent = subagentProgressOf(item)
+  if (!subagent) return null
+
+  const finished = subagent.finished === true
+  const usage = subagent.usage && typeof subagent.usage === "object" && !Array.isArray(subagent.usage)
+    ? (subagent.usage as Record<string, unknown>)
+    : null
+  const tokens = usage ? numberOf(usage.totalTokens) : null
+  const durationMs = usage ? numberOf(usage.durationMs) : null
+
+  const parts: string[] = []
+  if (tokens != null && tokens > 0) parts.push(tSession("subagentTokens", { tokens }))
+  if (durationMs != null && durationMs > 0) {
+    parts.push(tSession("subagentDuration", { seconds: Math.round(durationMs / 100) / 10 }))
+  }
+  const label = finished
+    ? parts.join(" · ") || textOf(subagent.status) || ""
+    : tSession("subagentRunning")
+  if (!label) return null
+
+  return (
+    <Badge variant="outline" className="h-5 gap-1 text-[11px] font-normal">
+      {!finished ? <Loader2 className="size-3 animate-spin" /> : null}
+      {label}
     </Badge>
   )
 }

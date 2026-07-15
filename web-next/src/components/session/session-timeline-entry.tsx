@@ -8,7 +8,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { JsonBlock, TimelineStatusBadge, ToolCard } from "@/components/session/session-tool-cards"
 import { openSessionFilePreview } from "@/components/markdown-text"
 import { cn } from "@/lib/utils"
-import type { Approval, ApprovalResolveStatus, SessionView, TimelineItem } from "@/features/dashboard/types"
+import type { Approval, ApprovalResolveStatus, ApprovalSelection, SessionView, TimelineItem } from "@/features/dashboard/types"
 import { firstTextOf, messageText, recordsOf, textOf } from "@/components/session/session-utils"
 import { extractAttachments, stripInjectedAttachmentMentions } from "@/features/dashboard/attachments"
 import { MessageAttachments } from "@/components/session/message-attachments"
@@ -33,7 +33,11 @@ export function TimelineEntry({
   childItems?: TimelineItem[]
   resolvingApprovalId: string | null
   resolvingStatus: ApprovalResolveStatus | null
-  onResolveApproval: (approvalId: string, status: ApprovalResolveStatus) => void
+  onResolveApproval: (
+    approvalId: string,
+    status: ApprovalResolveStatus,
+    selections?: ApprovalSelection[],
+  ) => void
 }) {
   if (item.type === "turn.start" || item.type === "turn.end") return null
   if (item.type === "message") return <MessageCard token={token} session={session} item={item} />
@@ -123,6 +127,7 @@ function MessageCard({ token, session, item }: { token: string; session: Session
 function SystemCard({ item }: { item: TimelineItem }) {
   const kind = textOf(item.content.kind) || "system"
   if (kind === "reasoning") return <ReasoningEntry item={item} />
+  if (kind === "compact") return <CompactEntry item={item} />
   const text = textOf(item.content.text) || textOf(item.content.message) || textOf(item.content.rawText)
   const failed = item.status === "failed" || kind === "error"
   return (
@@ -136,28 +141,79 @@ function SystemCard({ item }: { item: TimelineItem }) {
   )
 }
 
+function CompactEntry({ item }: { item: TimelineItem }) {
+  const tSession = useTranslations("dashboard.session")
+  // Context-compaction separator: the connector emits this where the CLI
+  // auto-compacted the window. Render a centered, non-expandable divider so the
+  // user understands why earlier history vanished, with the before/after token
+  // counts when the connector supplied them.
+  const pre = typeof item.content.preTokens === "number" ? item.content.preTokens : null
+  const post = typeof item.content.postTokens === "number" ? item.content.postTokens : null
+  const detail =
+    pre !== null && post !== null
+      ? tSession("contextCompactedTokens", { pre: pre.toLocaleString(), post: post.toLocaleString() })
+      : null
+  return (
+    <div className="flex items-center gap-3 py-1 text-xs text-muted-foreground">
+      <div className="h-px flex-1 bg-border" />
+      <div className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        <Sparkles className="size-3.5 shrink-0" />
+        <span className="font-medium">{tSession("contextCompacted")}</span>
+        {detail ? <span className="text-muted-foreground/80">· {detail}</span> : null}
+      </div>
+      <div className="h-px flex-1 bg-border" />
+    </div>
+  )
+}
+
+function reasoningDurationSeconds(item: TimelineItem): number | null {
+  // Thinking duration is a free client-side derivation: the connector stamps
+  // createdAt when the block opens and completedAt when it converges. No
+  // dedicated duration field is sent.
+  if (!item.completedAt) return null
+  const started = Date.parse(item.createdAt)
+  const finished = Date.parse(item.completedAt)
+  if (Number.isNaN(started) || Number.isNaN(finished)) return null
+  const seconds = Math.round((finished - started) / 1000)
+  return seconds > 0 ? seconds : null
+}
+
 function ReasoningEntry({ item }: { item: TimelineItem }) {
   const tSession = useTranslations("dashboard.session")
+  const streaming = item.status === "running"
+  const redacted = item.content.redacted === true
   const summaries = recordsOf(item.content.summaries)
     .map((summary) => textOf(summary.text))
     .filter((text): text is string => Boolean(text))
   const rawText = textOf(item.content.rawText) || textOf(item.content.text)
   const lines = summaries.length > 0 ? summaries : rawText ? [rawText] : []
+  const duration = streaming ? null : reasoningDurationSeconds(item)
+  const label = streaming
+    ? tSession("reasoningThinking")
+    : duration !== null
+      ? tSession("reasoningDuration", { seconds: duration })
+      : tSession("reasoning")
   return (
     <Collapsible className="min-w-0 max-w-full overflow-hidden">
       <div className="min-w-0 max-w-full space-y-2 overflow-hidden">
         <CollapsibleTrigger asChild>
           <button className="group inline-flex h-7 max-w-full items-center gap-1.5 rounded-full bg-secondary px-2.5 text-left text-xs font-medium text-secondary-foreground transition-colors hover:bg-secondary/80">
             <ChevronDown className="size-3.5 shrink-0 -rotate-90 transition-transform group-data-[state=open]:rotate-0" />
-            <Sparkles className="size-3.5 shrink-0" />
-            <span className="truncate">{tSession("reasoning")}</span>
+            <Sparkles className={cn("size-3.5 shrink-0", streaming && "animate-pulse")} />
+            <span className="truncate">{label}</span>
           </button>
         </CollapsibleTrigger>
-        {lines.length > 0 ? (
+        {redacted ? (
+          <CollapsibleContent className="min-w-0 max-w-full overflow-hidden">
+            <div className="pl-1 text-sm italic leading-relaxed text-muted-foreground">
+              {tSession("reasoningRedacted")}
+            </div>
+          </CollapsibleContent>
+        ) : lines.length > 0 ? (
           <CollapsibleContent className="min-w-0 max-w-full overflow-hidden">
             <div className="space-y-2 pl-1 text-sm leading-relaxed text-muted-foreground">
               {lines.map((line, index) => (
-                <p key={index}>{line}</p>
+                <MarkdownText key={index} text={line} />
               ))}
             </div>
           </CollapsibleContent>

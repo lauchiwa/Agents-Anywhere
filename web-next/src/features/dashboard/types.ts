@@ -77,6 +77,33 @@ export type SessionView = {
   effectiveRunMode?: "chat" | "terminal" | null;
   runtimeSettings?: Record<string, unknown> | null;
   runtimeSettingsOverride?: Record<string, unknown> | null;
+  // Context-window usage gauge (Claude only): current tokens, ceiling, percent
+  // used, and whether autocompact is armed. Null until the first turn reports it.
+  contextUsage?: ContextUsage | null;
+  // Rate-limit snapshot (Claude only): the CLI's throttling state. status
+  // "allowed" means no warning to show; "allowed_warning"/"rejected" surface a
+  // quota banner with the reset time. Null until the first event reports it.
+  rateLimit?: RateLimit | null;
+};
+
+export type ContextUsage = {
+  totalTokens?: number;
+  maxTokens?: number;
+  percentage?: number;
+  model?: string;
+  autoCompactEnabled?: boolean;
+  autoCompactThreshold?: number;
+};
+
+// Rate-limit snapshot (Claude only): the CLI's throttling state. status
+// "allowed" means no warning; "allowed_warning"/"rejected" surface a banner.
+export type RateLimit = {
+  status?: "allowed" | "allowed_warning" | "rejected";
+  type?: string;
+  resetsAt?: number;
+  utilization?: number;
+  overageStatus?: string;
+  overageResetsAt?: number;
 };
 
 export type ConnectorListResponse = {
@@ -231,7 +258,28 @@ export type ApprovalKind =
   | "permission"
   | "tool_call"
   | "input_request"
+  | "question"
   | "unknown";
+
+// AskUserQuestion payload shape (approval.payload.input.questions[]).
+export type ApprovalQuestionOption = {
+  label: string;
+  description?: string;
+};
+
+export type ApprovalQuestion = {
+  header?: string;
+  question: string;
+  multiSelect?: boolean;
+  options: ApprovalQuestionOption[];
+};
+
+// One resolved answer sent back on resolve: the question text plus the
+// chosen label(s). A free-text "Other" answer is just a label string.
+export type ApprovalSelection = {
+  question: string;
+  labels: string[];
+};
 
 export type Approval = {
   id: string;
@@ -243,7 +291,7 @@ export type Approval = {
   title: string;
   description: string | null;
   payload: unknown;
-  choices: Array<"approve" | "approve_for_session" | "reject" | "cancel">;
+  choices: Array<"approve" | "approve_for_session" | "reject" | "cancel" | "answer">;
   source: Record<string, unknown>;
   updatedSeq: number;
   createdAt: string;

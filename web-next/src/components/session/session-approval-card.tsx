@@ -1,21 +1,69 @@
 "use client"
 
-import { Check, Loader2, ShieldCheck, X } from "lucide-react"
+import * as React from "react"
+import { Check, Loader2, MessageCircleQuestion, ShieldCheck, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import type { Approval, ApprovalResolveStatus } from "@/features/dashboard/types"
+import type {
+  Approval,
+  ApprovalQuestion,
+  ApprovalResolveStatus,
+  ApprovalSelection,
+} from "@/features/dashboard/types"
 import { useTranslations } from "next-intl"
 
 type ApprovalCardProps = {
   approval: Approval
   resolvingApprovalId: string | null
   resolvingStatus: ApprovalResolveStatus | null
-  onResolveApproval: (approvalId: string, status: ApprovalResolveStatus) => void
+  onResolveApproval: (
+    approvalId: string,
+    status: ApprovalResolveStatus,
+    selections?: ApprovalSelection[],
+  ) => void
   compact?: boolean
 }
 
-export function ApprovalCard({
+// The `__other__` sentinel marks the free-text "Other" option the CLI always
+// appends; its real value comes from the text input rather than the label.
+const OTHER_VALUE = "__other__"
+
+// Pull the questions array out of the loosely-typed approval payload
+// ({toolName, input: {questions: [...]}}). Returns [] for non-question cards.
+// `options` is normalized to an array so QuestionCard's `q.options.map` never
+// throws on malformed payloads (the connector forwards the input as-is).
+function readQuestions(payload: unknown): ApprovalQuestion[] {
+  if (!payload || typeof payload !== "object") return []
+  const input = (payload as { input?: unknown }).input
+  if (!input || typeof input !== "object") return []
+  const questions = (input as { questions?: unknown }).questions
+  if (!Array.isArray(questions)) return []
+  return questions
+    .filter(
+      (q): q is ApprovalQuestion =>
+        !!q && typeof q === "object" && typeof (q as ApprovalQuestion).question === "string",
+    )
+    .map((q) => ({
+      ...q,
+      options: Array.isArray(q.options)
+        ? q.options.filter(
+            (opt): opt is ApprovalQuestion["options"][number] =>
+              !!opt && typeof opt === "object" && typeof opt.label === "string",
+          )
+        : [],
+    }))
+}
+
+export function ApprovalCard(props: ApprovalCardProps) {
+  const { approval } = props
+  if (approval.kind === "question" || approval.choices.includes("answer")) {
+    return <QuestionCard {...props} />
+  }
+  return <PermissionCard {...props} />
+}
+
+function PermissionCard({
   approval,
   resolvingApprovalId,
   resolvingStatus,
@@ -73,6 +121,168 @@ export function ApprovalCard({
               {tSession("approve")}
             </Button>
           ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function QuestionCard({
+  approval,
+  resolvingApprovalId,
+  onResolveApproval,
+  compact,
+}: ApprovalCardProps) {
+  const tSession = useTranslations("dashboard.session")
+  const questions = React.useMemo(() => readQuestions(approval.payload), [approval.payload])
+  const disabled = resolvingApprovalId !== null
+  const resolving = resolvingApprovalId === approval.id
+
+  // Per-question selection: chosen option labels (multi allows several) plus the
+  // free-text value typed into the "Other" input, kept separately so toggling
+  // "Other" off doesn't lose what was typed.
+  const [selected, setSelected] = React.useState<Record<number, string[]>>({})
+  const [otherText, setOtherText] = React.useState<Record<number, string>>({})
+
+  const toggleOption = (qIndex: number, label: string, multi: boolean) => {
+    setSelected((prev) => {
+      const current = prev[qIndex] ?? []
+      if (multi) {
+        const next = current.includes(label)
+          ? current.filter((l) => l !== label)
+          : [...current, label]
+        return { ...prev, [qIndex]: next }
+      }
+      return { ...prev, [qIndex]: current.includes(label) ? [] : [label] }
+    })
+  }
+
+  // Resolve each question's chosen labels, substituting the typed text for the
+  // "Other" sentinel. Questions with no selection are omitted.
+  const buildSelections = (): ApprovalSelection[] => {
+    const result: ApprovalSelection[] = []
+    questions.forEach((q, qIndex) => {
+      const chosen = selected[qIndex] ?? []
+      const labels = chosen
+        .map((label) => (label === OTHER_VALUE ? (otherText[qIndex] ?? "").trim() : label))
+        .filter((label) => label.length > 0)
+      if (labels.length > 0) {
+        result.push({ question: q.question, labels })
+      }
+    })
+    return result
+  }
+
+  const selections = buildSelections()
+  // Every question must have at least one answer before submitting.
+  const canSubmit = questions.length > 0 && selections.length === questions.length
+
+  const handleSubmit = () => {
+    if (!canSubmit || disabled) return
+    onResolveApproval(approval.id, "approved", selections)
+  }
+
+  return (
+    <div className={cn("rounded-xl border border-border bg-muted/25 p-3", compact && "rounded-lg")}>
+      <div className="flex min-w-0 gap-2">
+        <MessageCircleQuestion className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <div className="wrap-break-word text-sm font-medium">
+            {approval.title || tSession("approvalRequested")}
+          </div>
+
+          <div className="mt-2 flex flex-col gap-4">
+            {questions.map((q, qIndex) => {
+              const multi = q.multiSelect === true
+              const chosen = selected[qIndex] ?? []
+              const otherActive = chosen.includes(OTHER_VALUE)
+              return (
+                <div key={qIndex} className="flex flex-col gap-1.5">
+                  {q.header ? (
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {q.header}
+                    </div>
+                  ) : null}
+                  <div className="wrap-break-word text-sm">{q.question}</div>
+                  <div className="mt-1 flex flex-col gap-1.5">
+                    {q.options.map((opt) => {
+                      const active = chosen.includes(opt.label)
+                      return (
+                        <button
+                          key={opt.label}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => toggleOption(qIndex, opt.label, multi)}
+                          className={cn(
+                            "flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+                            active
+                              ? "border-primary bg-primary/10"
+                              : "border-border bg-background hover:bg-accent",
+                            disabled && "opacity-60",
+                          )}
+                        >
+                          <span className="wrap-break-word font-medium">{opt.label}</span>
+                          {opt.description ? (
+                            <span className="wrap-break-word text-xs text-muted-foreground">
+                              {opt.description}
+                            </span>
+                          ) : null}
+                        </button>
+                      )
+                    })}
+                    <button
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => toggleOption(qIndex, OTHER_VALUE, multi)}
+                      className={cn(
+                        "rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+                        otherActive
+                          ? "border-primary bg-primary/10"
+                          : "border-border bg-background hover:bg-accent",
+                        disabled && "opacity-60",
+                      )}
+                    >
+                      {tSession("answerOther")}
+                    </button>
+                    {otherActive ? (
+                      <input
+                        type="text"
+                        autoFocus
+                        disabled={disabled}
+                        value={otherText[qIndex] ?? ""}
+                        onChange={(e) =>
+                          setOtherText((prev) => ({ ...prev, [qIndex]: e.target.value }))
+                        }
+                        placeholder={tSession("answerOtherPlaceholder")}
+                        className="rounded-lg border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      />
+                    ) : null}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="whitespace-nowrap"
+              disabled={disabled}
+              onClick={() => onResolveApproval(approval.id, "rejected")}
+            >
+              {tSession("answerSkip")}
+            </Button>
+            <Button
+              size="sm"
+              className="whitespace-nowrap"
+              disabled={disabled || !canSubmit}
+              onClick={handleSubmit}
+            >
+              {resolving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+              {tSession("answerSubmit")}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

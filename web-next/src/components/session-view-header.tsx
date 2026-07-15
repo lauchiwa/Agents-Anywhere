@@ -160,6 +160,9 @@ export function SessionViewHeader({
           onExportRemoteTimeline={onExportRemoteTimeline}
           exporting={exporting}
         />
+        <ContextUsageBadge session={session} />
+        <RateLimitBadge session={session} />
+        <PlanModeBadge session={session} />
         <div className="ml-auto flex items-center gap-1">
           <TogglePanelButton id="files" icon={PANEL_META.files.icon} />
           <TogglePanelButton id="terminal" icon={PANEL_META.terminal.icon} />
@@ -295,6 +298,144 @@ function SessionMetaBadge({
         </div>
       </HoverCardContent>
     </HoverCard>
+  )
+}
+
+type ContextUsageGauge = {
+  totalTokens?: number
+  maxTokens?: number
+  percentage?: number
+  autoCompactEnabled?: boolean
+  autoCompactThreshold?: number
+}
+
+function numberOf(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null
+}
+
+// Session-level context-window gauge, fed by the connector's get_context_usage()
+// snapshot (CLI /context data) carried on session.updated. Shows percent used and
+// warns when the session is close to auto-compact, so a long session's impending
+// compaction is visible instead of a surprise.
+function ContextUsageBadge({ session }: { session: SessionViewModel }) {
+  const t = useTranslations("dashboard.session")
+  const usage = session.contextUsage as ContextUsageGauge | null | undefined
+  if (!usage) return null
+  const total = numberOf(usage.totalTokens)
+  const max = numberOf(usage.maxTokens)
+  const rawPercentage = numberOf(usage.percentage)
+  const percentage = rawPercentage != null
+    ? rawPercentage
+    : total != null && max
+      ? (total / max) * 100
+      : null
+  if (percentage == null) return null
+  const rounded = Math.round(percentage)
+  // "Near auto-compact" once we cross the threshold (or 80% as a fallback when
+  // the connector didn't report one). autoCompactEnabled must be on to warn.
+  const thresholdPct = usage.autoCompactThreshold && max
+    ? (usage.autoCompactThreshold / max) * 100
+    : 80
+  const nearCompact = usage.autoCompactEnabled === true && percentage >= thresholdPct
+
+  return (
+    <HoverCard openDelay={120} closeDelay={80}>
+      <HoverCardTrigger asChild>
+        <Badge
+          variant={nearCompact ? "destructive" : "secondary"}
+          className="shrink-0 cursor-default font-normal tabular-nums"
+        >
+          {t("contextUsage", { percentage: rounded })}
+        </Badge>
+      </HoverCardTrigger>
+      <HoverCardContent align="end" sideOffset={10} className="w-56 rounded-xl p-3 text-sm">
+        <div className="space-y-1">
+          {total != null && max ? (
+            <div className="text-muted-foreground">
+              {t("contextUsageTokens", { used: total.toLocaleString(), max: max.toLocaleString() })}
+            </div>
+          ) : null}
+          {nearCompact ? (
+            <div className="font-medium text-destructive">{t("contextNearCompact")}</div>
+          ) : null}
+        </div>
+      </HoverCardContent>
+    </HoverCard>
+  )
+}
+
+type RateLimitSnapshot = {
+  status?: string
+  type?: string
+  resetsAt?: number
+  utilization?: number
+  overageStatus?: string
+  overageResetsAt?: number
+}
+
+function formatRateLimitReset(resetsAt: number | null): string | null {
+  // resetsAt is a Unix timestamp (seconds). Render it as a short local time so
+  // the user knows when the throttle lifts; fall back to null when absent.
+  if (resetsAt == null) return null
+  const ms = resetsAt > 1e12 ? resetsAt : resetsAt * 1000
+  const date = new Date(ms)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+}
+
+// Session-level rate-limit indicator, fed by the connector's RateLimitEvent
+// snapshot carried on session.updated. Shows a warning when quota is nearly
+// exhausted and a distinct "rate limited" state when throttled. Hidden once the
+// throttle lifts (status back to "allowed").
+function RateLimitBadge({ session }: { session: SessionViewModel }) {
+  const t = useTranslations("dashboard.session")
+  const rate = session.rateLimit as RateLimitSnapshot | null | undefined
+  if (!rate) return null
+  const status = rate.status
+  // "allowed" is the steady state — nothing to surface. Only warn / block.
+  if (status !== "allowed_warning" && status !== "rejected") return null
+  const rejected = status === "rejected"
+  const resets = formatRateLimitReset(numberOf(rate.resetsAt))
+  const utilization = numberOf(rate.utilization)
+  const utilizationPct = utilization != null ? Math.round(utilization * 100) : null
+
+  return (
+    <HoverCard openDelay={120} closeDelay={80}>
+      <HoverCardTrigger asChild>
+        <Badge
+          variant={rejected ? "destructive" : "secondary"}
+          className="shrink-0 cursor-default font-normal tabular-nums"
+        >
+          {rejected ? t("rateLimited") : t("rateLimitWarning")}
+        </Badge>
+      </HoverCardTrigger>
+      <HoverCardContent align="end" sideOffset={10} className="w-56 rounded-xl p-3 text-sm">
+        <div className="space-y-1">
+          {utilizationPct != null ? (
+            <div className="text-muted-foreground">{t("rateLimitUtilization", { percentage: utilizationPct })}</div>
+          ) : null}
+          {resets ? (
+            <div className={rejected ? "font-medium text-destructive" : "text-muted-foreground"}>
+              {t("rateLimitResets", { time: resets })}
+            </div>
+          ) : null}
+        </div>
+      </HoverCardContent>
+    </HoverCard>
+  )
+}
+
+// Plan-mode indicator: when the session's effective permission mode is "plan",
+// the model only plans and never executes tools. Surface it so the user knows
+// why nothing is running until they approve the plan (ExitPlanMode).
+function PlanModeBadge({ session }: { session: SessionViewModel }) {
+  const t = useTranslations("dashboard.session")
+  const settings = session.runtimeSettings as { permissionMode?: unknown } | null | undefined
+  if (!settings || settings.permissionMode !== "plan") return null
+  return (
+    <Badge variant="secondary" className="shrink-0 cursor-default font-normal">
+      {t("planMode")}
+    </Badge>
   )
 }
 

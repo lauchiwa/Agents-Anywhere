@@ -71,6 +71,26 @@ export type SessionView = {
   updatedSeq: number
   effectiveRunMode?: "chat" | "terminal" | null
   runtimeSettings?: Record<string, unknown> | null
+  // Context-window occupancy gauge (Claude get_context_usage / CLI /context),
+  // refreshed per turn. Absent for runtimes/sessions that never reported it.
+  contextUsage?: {
+    totalTokens?: number
+    maxTokens?: number
+    percentage?: number
+    model?: string
+    autoCompactEnabled?: boolean
+    autoCompactThreshold?: number
+  } | null
+  // Rate-limit snapshot (Claude): throttling status + which window + reset time.
+  // status "allowed" means no active throttle; the UI only warns otherwise.
+  rateLimit?: {
+    status?: string
+    type?: string
+    resetsAt?: number
+    utilization?: number
+    overageStatus?: string
+    overageResetsAt?: number
+  } | null
   updatedAt: string // UI convenience field (not in backend)
 }
 
