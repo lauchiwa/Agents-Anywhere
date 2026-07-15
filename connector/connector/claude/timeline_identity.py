@@ -33,6 +33,30 @@ class ClaudeTimelineIdentity:
         )
 
     @staticmethod
+    def reasoning(
+        *,
+        session_id: str,
+        claude_session_id: str,
+        message_id: str,
+        block_index: int | None,
+    ) -> str:
+        # Thinking blocks share their parent assistant message's id with the
+        # visible text blocks, so a message-derived id would collide and let the
+        # reasoning item overwrite (or be overwritten by) the answer text. Fold
+        # the block index in to give each reasoning block its own stable id
+        # across both the live and history-replay paths.
+        return f"claude_reasoning_{_short('reasoning', claude_session_id, message_id, block_index)}"
+
+    @staticmethod
+    def compact(*, session_id: str, claude_session_id: str, source_event_id: str) -> str:
+        # A compact_boundary record marks where the CLI auto-compacted the
+        # context window. It has no message/tool id, so key the timeline item on
+        # the record's own uuid (sourceEventId) — stable across the live and
+        # history-replay paths, and unique per boundary so multiple compactions
+        # in one session each get their own separator.
+        return f"claude_compact_{_short('compact', claude_session_id, source_event_id)}"
+
+    @staticmethod
     def derived(*values: Any) -> str:
         return f"claude_derived_{_short(*values)}"
 

@@ -351,6 +351,15 @@ class BackendRpcClient:
             return await self._resolve_adapter(params).interrupt_turn(params)
         if method == "approval.resolve":
             return await self._resolve_adapter(params).resolve_approval(params)
+        if method in ("runtime.setModel", "runtime.setPermissionMode"):
+            adapter = self._resolve_adapter(params)
+            handler_name = (
+                "set_model" if method == "runtime.setModel" else "set_permission_mode"
+            )
+            handler = getattr(adapter, handler_name, None)
+            if not callable(handler):
+                return {"ok": False, "reason": "runtime does not support this switch"}
+            return await handler(params)
         if method == "fs.prepareDownload":
             return await self.local_ops.prepare_download(params)
         if method == "fs.uploadPreparedDownload":

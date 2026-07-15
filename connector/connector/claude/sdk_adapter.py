@@ -17,6 +17,7 @@ from connector.adapter import NotificationSink
 from connector.claude.history_adapter import ClaudeHistoryAdapter
 from connector.claude.normalized import NormalizedClaudeEvent
 from connector.claude.normalizers import ClaudeLiveNormalizer
+from connector.claude.timeline_identity import ClaudeTimelineIdentity
 from connector.claude.timeline_reducer import ClaudeTimelineReducer, is_task_event_tool_name
 from connector.launch import LaunchTarget, launch_target
 from connector.time import utc_now
@@ -41,6 +42,11 @@ class _PendingSdkApproval:
     approval_id: str
     future: asyncio.Future[str]
     input_data: dict[str, Any]
+    tool_name: str = ""
+    # For AskUserQuestion: {question_text: answer_string | [answer_string, ...]}.
+    # Injected into the tool's updated_input so the CLI feeds the choices back to
+    # the model instead of "The user did not answer the questions."
+    answers: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)
@@ -64,9 +70,46 @@ class _SdkSessionRuntime:
     partial_message_id: str | None = None
     partial_message_uuid: str | None = None
     partial_text_blocks: dict[int, str] = field(default_factory=dict)
+    # Per-content-block-index type ("text" | "thinking"), registered on
+    # content_block_start. Thinking and text blocks of one assistant message
+    # share a single continuous index space, so we can only tell a thinking
+    # delta apart from a text delta by remembering the index's block type.
+    partial_block_types: dict[int, str] = field(default_factory=dict)
     live_stream_items: dict[str, dict[str, Any]] = field(default_factory=dict)
     live_tool_items: dict[str, dict[str, Any]] = field(default_factory=dict)
     ignored_task_tool_use_ids: set[str] = field(default_factory=set)
+    # Sub-agent (Agent/Task tool) live progress. These arrive as SDK
+    # TaskStarted/Progress/Notification/Updated messages that exist ONLY in the
+    # real-time stream (never in the transcript JSONL), so they can't ride the
+    # shared normalizer/reducer path — they are merged straight into the parent
+    # Agent tool card's content.subagent here. subagent_progress accumulates the
+    # progress dict per parent tool_use_id; subagent_task_to_tool maps a task_id
+    # back to its tool_use_id for TaskUpdated messages, which carry only task_id.
+    subagent_progress: dict[str, dict[str, Any]] = field(default_factory=dict)
+    subagent_task_to_tool: dict[str, str] = field(default_factory=dict)
+    # "Approve for this session" grants. Keyed by a hash of tool_name + the
+    # canonicalized tool input (see _approval_rule_key), NOT including turn_id,
+    # so the grant survives across turns within the same session. Deliberately
+    # parameter-exact: approving `Bash("npm test")` never auto-allows
+    # `Bash("rm -rf /")`. The set lives on the per-session runtime, so a new
+    # session (or a connector restart) starts empty — old grants never leak.
+    session_approved_rules: set[str] = field(default_factory=set)
+    # Latest context-window usage gauge (from client.get_context_usage()), a
+    # session-level snapshot carried on session.updated so clients can show a
+    # "context 68% · near autocompact" indicator. Distinct from per-turn usage,
+    # which rides the turn.end timeline item.
+    context_usage: dict[str, Any] | None = None
+    # Latest rate-limit snapshot (from the SDK's RateLimitEvent, emitted when the
+    # CLI's throttling state changes). Carried on session.updated as rateLimit so
+    # clients can warn "quota almost full, resets at X" or "rate limited". Sticky
+    # until a later event supersedes it; an "allowed" event clears it to None so
+    # the warning disappears once throttling lifts.
+    rate_limit: dict[str, Any] | None = None
+    # Set when the user approves an ExitPlanMode tool call: the permission mode to
+    # switch back to (execution) once plan mode ends. Carried on the next
+    # session.updated as permissionMode so the server persists it to the session
+    # override and later turns run in execute mode instead of re-entering plan.
+    pending_permission_mode: str | None = None
 
 
 @dataclass(slots=True)
@@ -155,9 +198,12 @@ class ClaudeSdkAdapter:
         runtime.partial_message_id = None
         runtime.partial_message_uuid = None
         runtime.partial_text_blocks.clear()
+        runtime.partial_block_types.clear()
         runtime.live_stream_items.clear()
         runtime.live_tool_items.clear()
         runtime.ignored_task_tool_use_ids.clear()
+        runtime.subagent_progress.clear()
+        runtime.subagent_task_to_tool.clear()
         runtime.active_task = asyncio.create_task(
             self._drive_turn(runtime=runtime, params=params, content=content, turn_id=turn_id)
         )
@@ -183,6 +229,65 @@ class ClaudeSdkAdapter:
                 return {"interrupted": True}
         return {"interrupted": False, "reason": "no active Claude SDK client"}
 
+    async def set_model(self, params: dict[str, Any]) -> dict[str, Any]:
+        # Switch the model on the in-flight client so it takes effect mid-turn.
+        # The persisted override (server side) is what makes the change stick for
+        # later turns; this RPC only handles the live client. An empty/None model
+        # resets to the SDK default. No active client -> a readable failure, not
+        # a crash (the override still applies to the next turn).
+        return await self._apply_runtime_setting(
+            params,
+            method_name="set_model",
+            value=_optional_string(params.get("model")),
+            allow_none=True,
+        )
+
+    async def set_permission_mode(self, params: dict[str, Any]) -> dict[str, Any]:
+        # Switch the permission mode on the in-flight client (default / acceptEdits
+        # / plan / bypassPermissions / dontAsk / auto). Same contract as set_model:
+        # live-only, degrades cleanly when no client is running.
+        mode = _optional_string(params.get("permissionMode") or params.get("mode"))
+        if not mode:
+            return {"applied": False, "reason": "permissionMode is required"}
+        return await self._apply_runtime_setting(
+            params,
+            method_name="set_permission_mode",
+            value=mode,
+            allow_none=False,
+        )
+
+    async def _apply_runtime_setting(
+        self,
+        params: dict[str, Any],
+        *,
+        method_name: str,
+        value: str | None,
+        allow_none: bool,
+    ) -> dict[str, Any]:
+        runtime = self._sessions.get(_required(params, "sessionId"))
+        if runtime is None:
+            return {"applied": False, "reason": "session not registered"}
+        client = runtime.client
+        if client is None:
+            return {"applied": False, "reason": "no active Claude SDK client"}
+        setter = getattr(client, method_name, None)
+        if not callable(setter):
+            return {"applied": False, "reason": f"client does not support {method_name}"}
+        if value is None and not allow_none:
+            return {"applied": False, "reason": "value is required"}
+        try:
+            await setter(value)
+        except Exception as exc:
+            logger.debug(
+                "claude sdk {} failed session_id={} external_session_id={}",
+                method_name,
+                runtime.session_id,
+                runtime.external_session_id,
+                exc_info=True,
+            )
+            return {"applied": False, "reason": str(exc) or method_name + " failed"}
+        return {"applied": True, "value": value}
+
     async def resolve_approval(self, params: dict[str, Any]) -> dict[str, Any]:
         session_id = _required(params, "sessionId")
         approval_id = _required(params, "approvalId")
@@ -193,6 +298,12 @@ class ClaudeSdkAdapter:
         pending = runtime.pending_approvals.get(approval_id)
         if pending is None:
             return {"resolved": False, "reason": "approval not pending"}
+        selections = params.get("selections")
+        if selections and pending.tool_name == "AskUserQuestion":
+            # Map the user's selections to the `answers` field the CLI expects:
+            # {question_text: answer_string | [answer_string, ...]}. Multi-select
+            # answers stay as a list; the CLI joins them with ", " itself.
+            pending.answers = _selections_to_answers(selections)
         if not pending.future.done():
             pending.future.set_result(status)
         return {"resolved": True}
@@ -235,6 +346,11 @@ class ClaudeSdkAdapter:
             )
             await client.query(_prompt_stream(runtime_content))
             await self._receive_response(runtime, client, turn_id)
+            # The client is still connected here, so a get_context_usage() RPC
+            # (the /context data: totalTokens/maxTokens/percentage/autocompact)
+            # is available. It never lands in the transcript, so this is the
+            # only place to capture it; failures are non-fatal.
+            await self._capture_context_usage(runtime, client)
             stream_finished = True
         except asyncio.CancelledError:
             raise
@@ -321,6 +437,10 @@ class ClaudeSdkAdapter:
                 for buffered in buffered_messages:
                     if _is_stream_event(buffered):
                         emitted_live_content = await self._emit_stream_event(runtime, turn_id, buffered) or emitted_live_content
+                    elif _is_task_progress_message(buffered):
+                        emitted_live_content = await self._emit_task_progress(runtime, turn_id, buffered) or emitted_live_content
+                    elif _is_rate_limit_message(buffered):
+                        await self._capture_rate_limit(runtime, buffered)
                     else:
                         emitted_live_content = await self._emit_sdk_message(runtime, turn_id, buffered) or emitted_live_content
                 if not emitted_live_content:
@@ -338,9 +458,23 @@ class ClaudeSdkAdapter:
                         status=status,
                         result=result,
                         stop_reason=subtype or result,
+                        usage=_turn_usage_from_result(message),
                     ),
                 )
                 break
+            if _is_task_progress_message(message):
+                if runtime.external_session_id is None:
+                    buffered_messages.append(message)
+                    continue
+                await self._emit_pending_user_message(runtime, turn_id)
+                emitted_live_content = await self._emit_task_progress(runtime, turn_id, message) or emitted_live_content
+                continue
+            if _is_rate_limit_message(message):
+                # Rate-limit state change. Snapshot it onto the runtime and push a
+                # session.updated so clients can warn about quota. It carries no
+                # timeline content, so it never counts as emitted_live_content.
+                await self._capture_rate_limit(runtime, message)
+                continue
             if runtime.external_session_id is None:
                 buffered_messages.append(message)
                 continue
@@ -352,6 +486,10 @@ class ClaudeSdkAdapter:
             for buffered in buffered_messages:
                 if _is_stream_event(buffered):
                     await self._emit_stream_event(runtime, turn_id, buffered)
+                elif _is_task_progress_message(buffered):
+                    await self._emit_task_progress(runtime, turn_id, buffered)
+                elif _is_rate_limit_message(buffered):
+                    await self._capture_rate_limit(runtime, buffered)
                 else:
                     await self._emit_sdk_message(runtime, turn_id, buffered)
             await self._finalize_live_stream_items(runtime, turn_id, status=status)
@@ -394,6 +532,60 @@ class ClaudeSdkAdapter:
             return await self._emit_normalized(runtime.session_id, turn_id, raw)
         return False
 
+    async def _emit_task_progress(self, runtime: _SdkSessionRuntime, turn_id: str, message: Any) -> bool:
+        # Sub-agent (Task/Agent) progress is a real-time-only signal: the SDK
+        # emits TaskStarted/TaskUpdated/TaskNotification system messages while a
+        # sub-agent runs, but they are never written to the transcript JSONL, so
+        # the history-replay path never sees them. Rather than route them through
+        # the transcript-shared normalizer/reducer (which would desync live vs
+        # replay), we merge them straight into the parent Agent tool card's
+        # content.subagent and re-upsert that card. The parent is resolved via
+        # the task's tool_use_id (present on Started/Notification) or, for a bare
+        # TaskUpdated (task_id only), the task_id -> tool_use_id map recorded from
+        # the Started message.
+        progress = _task_progress_from_message(message)
+        if progress is None:
+            return False
+        task_id = progress["taskId"]
+        tool_use_id = progress.get("toolUseId")
+        if tool_use_id:
+            runtime.subagent_task_to_tool[task_id] = tool_use_id
+        else:
+            tool_use_id = runtime.subagent_task_to_tool.get(task_id)
+        if not tool_use_id:
+            # A TaskUpdated arriving before we ever saw its Started message has no
+            # anchor to attach to; drop it rather than orphaning a card.
+            return False
+        card_id = ClaudeTimelineIdentity.tool_call(
+            session_id=runtime.session_id,
+            claude_session_id=runtime.external_session_id or "unknown",
+            tool_use_id=tool_use_id,
+        )
+        existing = runtime.live_tool_items.get(card_id)
+        if existing is None:
+            # The parent Agent tool card streams in as its own tool_use block; if
+            # it hasn't landed yet, stash the progress so it can be folded in when
+            # the card is first prepared (see _prepare_live_tool_item).
+            runtime.subagent_progress[tool_use_id] = _merge_subagent_progress(
+                runtime.subagent_progress.get(tool_use_id), progress
+            )
+            return False
+        merged = _merge_subagent_progress(
+            (existing.get("content") or {}).get("subagent") if isinstance(existing.get("content"), dict) else None,
+            progress,
+        )
+        runtime.subagent_progress[tool_use_id] = merged
+        content = dict(existing.get("content") if isinstance(existing.get("content"), dict) else {})
+        content["subagent"] = merged
+        updated = dict(existing)
+        updated["content"] = content
+        updated["revision"] = int(existing.get("revision") or 1) + 1
+        updated["contentHash"] = _hash_content(content)
+        updated["updatedAt"] = utc_now()
+        runtime.live_tool_items[card_id] = updated
+        await self._emit_item(runtime.session_id, updated)
+        return True
+
     async def _emit_normalized(
         self,
         session_id: str,
@@ -411,12 +603,12 @@ class ClaudeSdkAdapter:
         for item in reducer.reduce(session_id=session_id, turn_id=turn_id, events=events):
             dumped = dict(item)
             if runtime is not None:
-                if streaming and _is_streaming_assistant_message(dumped):
+                if streaming and (_is_streaming_assistant_message(dumped) or _is_streaming_reasoning_item(dumped)):
                     prepared = _prepare_live_stream_item(runtime, dumped)
                     if prepared is None:
                         continue
                     dumped = prepared
-                elif _is_streaming_assistant_message(dumped):
+                elif _is_streaming_assistant_message(dumped) or _is_streaming_reasoning_item(dumped):
                     prepared = _prepare_live_stream_final_item(runtime, dumped)
                     if prepared is not None:
                         dumped = prepared
@@ -525,17 +717,66 @@ class ClaudeSdkAdapter:
     async def _emit_session_update(self, runtime: _SdkSessionRuntime, *, status: str) -> None:
         if self.notification_sink is None:
             return
-        await self.notification_sink(
-            "session.updated",
-            {
-                "sessionId": runtime.session_id,
-                "runtime": "claude",
-                "externalSessionId": runtime.external_session_id,
-                "status": status,
-                "cwd": runtime.cwd,
-                "lastSyncedAt": utc_now(),
-            },
-        )
+        payload: dict[str, Any] = {
+            "sessionId": runtime.session_id,
+            "runtime": "claude",
+            "externalSessionId": runtime.external_session_id,
+            "status": status,
+            "cwd": runtime.cwd,
+            "lastSyncedAt": utc_now(),
+        }
+        if runtime.context_usage is not None:
+            payload["contextUsage"] = runtime.context_usage
+        if runtime.rate_limit is not None:
+            payload["rateLimit"] = runtime.rate_limit
+        if runtime.pending_permission_mode is not None:
+            # An approved ExitPlanMode: tell the server to persist the execution
+            # mode as the session override so the next turn leaves plan mode.
+            # Cleared once emitted so it rides exactly one session.updated.
+            payload["permissionMode"] = runtime.pending_permission_mode
+            runtime.pending_permission_mode = None
+        await self.notification_sink("session.updated", payload)
+
+    async def _capture_rate_limit(self, runtime: _SdkSessionRuntime, message: Any) -> None:
+        # A RateLimitEvent snapshots the CLI's throttling state. Store the latest
+        # snapshot on the runtime and push a session.updated so clients can react.
+        # We always keep the newest snapshot (including a plain "allowed") rather
+        # than clearing to None: the session.updated -> DB write path only writes
+        # the column when rateLimit is present, so a clear must be expressed as a
+        # status="allowed" snapshot the client reads, not a dropped field. The
+        # client hides the warning when status is "allowed".
+        snapshot = _rate_limit_from_message(message)
+        if snapshot is None:
+            return
+        # Skip a redundant "allowed" when we never had a warning to clear, so the
+        # steady state doesn't emit a rateLimit field the client would ignore.
+        if snapshot.get("status") == "allowed" and runtime.rate_limit is None:
+            return
+        runtime.rate_limit = snapshot
+        await self._emit_session_update(runtime, status="running")
+
+    async def _capture_context_usage(self, runtime: _SdkSessionRuntime, client: Any) -> None:
+        # get_context_usage() is a runtime RPC available only while the client
+        # is connected; it mirrors the CLI /context view. We snapshot it after
+        # each turn onto the runtime so the next session.updated carries it. Any
+        # failure (older CLI without the RPC, disconnect race) is swallowed —
+        # the gauge is a nicety, not correctness-critical.
+        getter = getattr(client, "get_context_usage", None)
+        if not callable(getter):
+            return
+        try:
+            raw = await getter()
+        except Exception:
+            logger.debug(
+                "claude sdk get_context_usage failed session_id={} external_session_id={}",
+                runtime.session_id,
+                runtime.external_session_id,
+                exc_info=True,
+            )
+            return
+        usage = _context_usage_from_response(raw)
+        if usage is not None:
+            runtime.context_usage = usage
 
     async def _mark_history_consumed(self, runtime: _SdkSessionRuntime) -> None:
         try:
@@ -629,10 +870,19 @@ class ClaudeSdkAdapter:
         runtime = self._runtime_from_context(context_session_id)
         if runtime is None:
             return _permission_deny(sdk, "Session is not registered")
+        # "Approve for session": if this exact tool_name + canonicalized input was
+        # previously approved_for_session, auto-allow without re-prompting. The key
+        # is parameter-exact (see _approval_rule_key) so approving `Read /a.txt`
+        # never silently allows `Read /b.txt` or `Bash rm -rf /`.
+        rule_key = _approval_rule_key(tool_name, input_data)
+        if rule_key in runtime.session_approved_rules and not runtime.interrupted:
+            return _permission_allow(sdk, input_data)
         approval_id = _approval_id(runtime.session_id, runtime.active_turn_id, tool_name, input_data)
         loop = asyncio.get_running_loop()
         future: asyncio.Future[str] = loop.create_future()
-        runtime.pending_approvals[approval_id] = _PendingSdkApproval(approval_id, future, input_data)
+        runtime.pending_approvals[approval_id] = _PendingSdkApproval(
+            approval_id, future, input_data, tool_name=tool_name
+        )
         if self.notification_sink is not None:
             await self.notification_sink(
                 "approval.requested",
@@ -644,9 +894,22 @@ class ClaudeSdkAdapter:
                 ),
             )
         status = await future
-        runtime.pending_approvals.pop(approval_id, None)
+        pending = runtime.pending_approvals.pop(approval_id, None)
         if status in {"approved", "approved_for_session"} and not runtime.interrupted:
-            return _permission_allow(sdk, input_data)
+            if status == "approved_for_session":
+                # Remember this exact tool_name + input for the rest of the session
+                # so identical calls auto-allow. Cleared with the runtime on a new
+                # session / restart, so stale grants never leak across sessions.
+                runtime.session_approved_rules.add(rule_key)
+            resolved_input = input_data
+            if pending is not None and pending.answers:
+                # AskUserQuestion: merge the user's selections into the tool input
+                # under `answers` (question text -> answer string). The CLI reads
+                # this via the permission component and surfaces it to the model as
+                # "Your questions have been answered: ..." instead of the default
+                # "The user did not answer the questions."
+                resolved_input = {**input_data, "answers": pending.answers}
+            return _permission_allow(sdk, resolved_input)
         return _permission_deny(sdk, "User denied or interrupted this action")
 
     def _runtime_from_context(self, context_session_id: str | None) -> _SdkSessionRuntime | None:
@@ -929,6 +1192,68 @@ def _result_message_to_raw(message: Any, fallback_session_id: str | None) -> dic
     }
 
 
+def _turn_usage_from_result(message: Any) -> dict[str, Any] | None:
+    """Flatten a ResultMessage's usage + cost into the turn.end content.usage
+    shape clients render. ResultMessage.usage mirrors the API usage block
+    (input/output/cache tokens); total_cost_usd is the turn's dollar cost.
+    Returns None when neither is present so turn.end stays lean on failure."""
+    usage = _extract_attr(message, "usage")
+    usage = usage if isinstance(usage, dict) else None
+    cost = _extract_attr(message, "total_cost_usd", "totalCostUsd")
+    if usage is None and cost is None:
+        return None
+    out: dict[str, Any] = {}
+    if usage is not None:
+        input_tokens = _int(usage.get("input_tokens")) or 0
+        output_tokens = _int(usage.get("output_tokens")) or 0
+        cache_creation = _int(usage.get("cache_creation_input_tokens")) or 0
+        cache_read = _int(usage.get("cache_read_input_tokens")) or 0
+        out["inputTokens"] = input_tokens
+        out["outputTokens"] = output_tokens
+        out["cacheCreationTokens"] = cache_creation
+        out["cacheReadTokens"] = cache_read
+        # The context-window occupancy of the last API call: everything the
+        # model saw as input this turn (fresh input + both cache tiers) plus
+        # what it produced. This is the number CLI /context sums.
+        out["totalTokens"] = input_tokens + cache_creation + cache_read + output_tokens
+    if isinstance(cost, (int, float)):
+        out["costUsd"] = float(cost)
+    return out or None
+
+
+def _context_usage_from_response(raw: Any) -> dict[str, Any] | None:
+    """Flatten a ContextUsageResponse (get_context_usage() / CLI /context) into
+    the compact session-level gauge clients render: current tokens, the
+    effective ceiling, percent used, and whether autocompact is armed. Returns
+    None when the payload lacks the totals that make a gauge meaningful."""
+    if not isinstance(raw, dict):
+        return None
+    total = _int(raw.get("totalTokens"))
+    max_tokens = _int(raw.get("maxTokens"))
+    if total is None and max_tokens is None:
+        return None
+    percentage = raw.get("percentage")
+    out: dict[str, Any] = {}
+    if total is not None:
+        out["totalTokens"] = total
+    if max_tokens is not None:
+        out["maxTokens"] = max_tokens
+    if isinstance(percentage, (int, float)):
+        out["percentage"] = float(percentage)
+    elif total is not None and max_tokens:
+        out["percentage"] = round(total / max_tokens * 100, 1)
+    model = _optional_string(raw.get("model"))
+    if model:
+        out["model"] = model
+    auto_compact = raw.get("isAutoCompactEnabled")
+    if isinstance(auto_compact, bool):
+        out["autoCompactEnabled"] = auto_compact
+    threshold = _int(raw.get("autoCompactThreshold"))
+    if threshold is not None:
+        out["autoCompactThreshold"] = threshold
+    return out or None
+
+
 def _stream_event_to_raw(runtime: _SdkSessionRuntime, turn_id: str, message: Any) -> dict[str, Any] | None:
     event = _extract_attr(message, "event")
     if not isinstance(event, dict):
@@ -937,6 +1262,7 @@ def _stream_event_to_raw(runtime: _SdkSessionRuntime, turn_id: str, message: Any
     if event_type == "message_start":
         payload = event.get("message")
         runtime.partial_text_blocks.clear()
+        runtime.partial_block_types.clear()
         if isinstance(payload, dict):
             runtime.partial_message_id = _optional_string(payload.get("id"))
         else:
@@ -946,16 +1272,32 @@ def _stream_event_to_raw(runtime: _SdkSessionRuntime, turn_id: str, message: Any
     if event_type == "content_block_start":
         index = _int(event.get("index"))
         block = event.get("content_block")
-        text = _text_from_stream_block(block)
-        if index is not None and text is not None:
-            runtime.partial_text_blocks[index] = text
-            return _partial_message_raw(runtime, turn_id, message)
-        return None
+        if index is None or not isinstance(block, dict):
+            return None
+        block_type = _stream_block_kind(_optional_string(block.get("type")))
+        if block_type is None:
+            return None
+        # Register this index's block type so deltas route to the right
+        # accumulator (thinking vs text) instead of being merged into one blob.
+        runtime.partial_block_types[index] = block_type
+        # thinking blocks start with the prose under `thinking`, text under
+        # `text`; both usually start empty and grow via deltas.
+        seed = _optional_string(block.get("thinking")) if block_type == "thinking" else _optional_string(block.get("text"))
+        runtime.partial_text_blocks[index] = seed or ""
+        return _partial_message_raw(runtime, turn_id, message)
     if event_type == "content_block_delta":
         index = _int(event.get("index"))
         delta = event.get("delta")
-        text = _text_from_stream_block(delta)
-        if index is not None and text:
+        if index is None or not isinstance(delta, dict):
+            return None
+        text = _text_from_stream_delta(delta)
+        if text:
+            # A delta may arrive before its content_block_start in rare orderings;
+            # default the type from the delta itself so routing still works.
+            if index not in runtime.partial_block_types:
+                runtime.partial_block_types[index] = (
+                    "thinking" if _optional_string(delta.get("type")) == "thinking_delta" else "text"
+                )
             runtime.partial_text_blocks[index] = f"{runtime.partial_text_blocks.get(index, '')}{text}"
             return _partial_message_raw(runtime, turn_id, message)
     if event_type == "message_delta":
@@ -964,8 +1306,20 @@ def _stream_event_to_raw(runtime: _SdkSessionRuntime, turn_id: str, message: Any
 
 
 def _partial_message_raw(runtime: _SdkSessionRuntime, turn_id: str, message: Any) -> dict[str, Any] | None:
-    text = "".join(runtime.partial_text_blocks[index] for index in sorted(runtime.partial_text_blocks))
-    if not text:
+    # Rebuild the message content array from per-index accumulators, preserving
+    # block order and type. Thinking and text blocks share the same index space,
+    # so we emit them as separate blocks (thinking -> reasoning card, text ->
+    # message) rather than concatenating everything into one text blob.
+    blocks: list[dict[str, Any]] = []
+    for index in sorted(runtime.partial_text_blocks):
+        text = runtime.partial_text_blocks[index]
+        if not text:
+            continue
+        if runtime.partial_block_types.get(index) == "thinking":
+            blocks.append({"type": "thinking", "thinking": text})
+        else:
+            blocks.append({"type": "text", "text": text})
+    if not blocks:
         return None
     message_id = runtime.partial_message_id
     if message_id is None:
@@ -979,20 +1333,34 @@ def _partial_message_raw(runtime: _SdkSessionRuntime, turn_id: str, message: Any
         "message": {
             "id": message_id,
             "role": "assistant",
-            "content": [{"type": "text", "text": text}],
+            "content": blocks,
         },
     }
 
 
-def _text_from_stream_block(value: Any) -> str | None:
-    if not isinstance(value, dict):
+def _stream_block_kind(block_type: str | None) -> str | None:
+    """Classify a content_block's type into the accumulator bucket it belongs to.
+
+    Returns "thinking" for extended-thinking blocks, "text" for visible text,
+    or None for blocks that don't stream prose (tool_use, redacted_thinking).
+    """
+    if block_type == "thinking":
+        return "thinking"
+    if block_type in {"text", None}:
+        return "text"
+    return None
+
+
+def _text_from_stream_delta(delta: dict[str, Any]) -> str | None:
+    delta_type = _optional_string(delta.get("type"))
+    if delta_type in {"text", "text_delta"}:
+        return _optional_string(delta.get("text"))
+    if delta_type == "thinking_delta":
+        return _optional_string(delta.get("thinking"))
+    if delta_type in {"input_json_delta", "signature_delta"}:
+        # Tool-input streaming and thinking signatures are not user-facing prose.
         return None
-    block_type = _optional_string(value.get("type"))
-    if block_type in {"text", "text_delta"}:
-        return _optional_string(value.get("text"))
-    if block_type == "input_json_delta":
-        return None
-    return _optional_string(value.get("text"))
+    return _optional_string(delta.get("text"))
 
 
 def _is_streaming_assistant_message(item: dict[str, Any]) -> bool:
@@ -1005,6 +1373,22 @@ def _is_streaming_assistant_message(item: dict[str, Any]) -> bool:
 
 def _is_tool_item(item: dict[str, Any]) -> bool:
     return item.get("type") == "tool" and isinstance(item.get("id"), str)
+
+
+def _is_streaming_reasoning_item(item: dict[str, Any]) -> bool:
+    # Reasoning (thinking) items stream in just like assistant text: their
+    # deltas arrive incrementally and must go through the same live-stream
+    # version management (revision bump, orderSeq preservation, convergence
+    # with the final aggregated block) rather than being re-emitted as a new
+    # card per delta. Identity is the block-indexed reasoning id, so the
+    # streaming deltas and the final ThinkingBlock collapse onto one item.
+    content = item.get("content")
+    return (
+        item.get("type") == "system"
+        and isinstance(item.get("id"), str)
+        and isinstance(content, dict)
+        and content.get("kind") == "reasoning"
+    )
 
 
 def _prepare_live_stream_item(
@@ -1080,6 +1464,14 @@ def _prepare_live_tool_item(
     now = utc_now()
     if existing is None:
         prepared = dict(item)
+        # Fold in any sub-agent progress that arrived before this parent Agent
+        # card streamed in (stashed in _emit_task_progress, keyed by tool_use_id).
+        stash_key = _optional_string(incoming_content.get("toolUseId"))
+        stashed = runtime.subagent_progress.get(stash_key) if stash_key else None
+        if stashed is not None:
+            merged_content = dict(incoming_content)
+            merged_content["subagent"] = stashed
+            prepared["content"] = merged_content
         prepared["orderSeq"] = _next_order(runtime)
         prepared["revision"] = int(prepared.get("revision") or 1)
         prepared["contentHash"] = _hash_content(prepared.get("content") if isinstance(prepared.get("content"), dict) else {})
@@ -1130,6 +1522,22 @@ def _blocks_to_dicts(content: Any) -> list[dict[str, Any]]:
             if text is None or not text.strip():
                 continue
             blocks.append({"type": "text", "text": text})
+        elif block_type == "thinking":
+            # Extended-thinking block. The SDK's ThinkingBlock and the raw JSONL
+            # both carry the prose under `thinking` (not `text`); `signature` is
+            # often an empty string and is not needed downstream.
+            text = _optional_string(_extract_attr(block, "thinking")) or _optional_string(
+                _extract_attr(block, "text")
+            )
+            if text is None or not text.strip():
+                continue
+            blocks.append({"type": "thinking", "text": text})
+        elif block_type == "redacted_thinking":
+            # Encrypted thinking: the prose is not recoverable (only an opaque
+            # `data` field). The live SDK parser drops these outright, but raw
+            # history JSONL can still carry them, so surface a placeholder rather
+            # than dropping silently or crashing on the missing `thinking` field.
+            blocks.append({"type": "thinking", "text": "", "redacted": True})
         elif block_type == "tool_use":
             blocks.append(
                 {
@@ -1180,6 +1588,8 @@ def _block_type_from_class(value: Any) -> str:
         return "tool_use"
     if "toolresult" in name or "tool_result" in name:
         return "tool_result"
+    if "thinking" in name:
+        return "thinking"
     return "text"
 
 
@@ -1190,6 +1600,165 @@ def _is_result_message(message: Any) -> bool:
 
 def _is_stream_event(message: Any) -> bool:
     return message.__class__.__name__.lower() == "streamevent"
+
+
+# Sub-agent (Task/Agent) progress lifecycle. These are the four SystemMessage
+# subclasses the SDK emits on the live stream while a sub-agent runs; matched by
+# class name to stay consistent with _is_result_message / _is_stream_event and
+# to survive the SDK exposing them as plain SystemMessage instances. Confirmed
+# empirically that the live receive_response() stream carries task_started,
+# task_updated and task_notification (task_progress only on longer runs); none
+# are ever written to the transcript JSONL, so this is a real-time-only signal.
+_TASK_MESSAGE_CLASSES = frozenset(
+    {
+        "taskstartedmessage",
+        "taskprogressmessage",
+        "taskupdatedmessage",
+        "tasknotificationmessage",
+    }
+)
+
+# Terminal sub-agent statuses. task_updated reports the raw "killed"; a
+# task_notification maps that to "stopped". Either means the sub-agent finished.
+_TERMINAL_TASK_STATUSES = frozenset({"completed", "failed", "stopped", "killed"})
+
+
+def _is_rate_limit_message(message: Any) -> bool:
+    # Matched by class name to stay consistent with _is_result_message /
+    # _is_task_progress_message and survive the SDK handing us a plain
+    # SystemMessage. RateLimitEvent is emitted on the live stream when the CLI's
+    # throttling state changes (allowed -> allowed_warning -> rejected and back).
+    if message.__class__.__name__.lower() == "ratelimitevent":
+        return True
+    subtype = _optional_string(_extract_attr(message, "subtype"))
+    return subtype == "rate_limit_event"
+
+
+def _rate_limit_from_message(message: Any) -> dict[str, Any] | None:
+    """Flatten a RateLimitEvent into the session-level rateLimit shape clients
+    render. Returns None when there is no usable status to surface."""
+    # The typed RateLimitEvent exposes rate_limit_info (a RateLimitInfo); a bare
+    # SystemMessage keeps the same payload under data["rate_limit_info"]. Accept
+    # either, and read the info's fields as attributes or dict keys.
+    info = _extract_attr(message, "rate_limit_info", "rateLimitInfo")
+    if info is None:
+        data = _extract_attr(message, "data")
+        if isinstance(data, dict):
+            info = data.get("rate_limit_info") or data.get("rateLimitInfo")
+    if info is None:
+        return None
+    status = _optional_string(_extract_attr(info, "status"))
+    if status is None and isinstance(info, dict):
+        status = _optional_string(info.get("status"))
+    if not status:
+        return None
+    out: dict[str, Any] = {"status": status}
+
+    def _info_field(*names: str) -> Any:
+        value = _extract_attr(info, *names)
+        if value is None and isinstance(info, dict):
+            for name in names:
+                if name in info:
+                    return info[name]
+        return value
+
+    limit_type = _optional_string(_info_field("rate_limit_type", "rateLimitType"))
+    if limit_type:
+        out["type"] = limit_type
+    resets_at = _int(_info_field("resets_at", "resetsAt"))
+    if resets_at is not None:
+        out["resetsAt"] = resets_at
+    utilization = _info_field("utilization")
+    if isinstance(utilization, (int, float)) and not isinstance(utilization, bool):
+        out["utilization"] = float(utilization)
+    overage_status = _optional_string(_info_field("overage_status", "overageStatus"))
+    if overage_status:
+        out["overageStatus"] = overage_status
+    overage_resets_at = _int(_info_field("overage_resets_at", "overageResetsAt"))
+    if overage_resets_at is not None:
+        out["overageResetsAt"] = overage_resets_at
+    return out
+
+
+def _is_task_progress_message(message: Any) -> bool:
+    if message.__class__.__name__.lower() in _TASK_MESSAGE_CLASSES:
+        return True
+    # Fallback: a plain SystemMessage whose subtype is one of the task_* kinds.
+    subtype = _optional_string(_extract_attr(message, "subtype"))
+    return subtype in {"task_started", "task_progress", "task_updated", "task_notification"}
+
+
+def _task_progress_from_message(message: Any) -> dict[str, Any] | None:
+    """Flatten a task_* system message into the content.subagent shape clients
+    render. Returns None when the message lacks a task_id (nothing to anchor)."""
+    task_id = _optional_string(_extract_attr(message, "task_id", "taskId"))
+    subtype = _optional_string(_extract_attr(message, "subtype"))
+    # A bare SystemMessage keeps its payload under `data`; the typed subclasses
+    # expose the same fields as attributes. Read attributes first, fall back to
+    # the data dict so both shapes work.
+    data = _extract_attr(message, "data")
+    data = data if isinstance(data, dict) else {}
+    if task_id is None:
+        task_id = _optional_string(data.get("task_id"))
+    if task_id is None:
+        return None
+    tool_use_id = _optional_string(_extract_attr(message, "tool_use_id", "toolUseId")) or _optional_string(
+        data.get("tool_use_id")
+    )
+    status = _optional_string(_extract_attr(message, "status")) or _optional_string(data.get("status"))
+    # task_updated carries its status inside a patch dict when the attribute is
+    # unset; prefer the explicit field but fall back to the patch.
+    if status is None:
+        patch = _extract_attr(message, "patch")
+        patch = patch if isinstance(patch, dict) else data.get("patch")
+        if isinstance(patch, dict):
+            status = _optional_string(patch.get("status"))
+    description = _optional_string(_extract_attr(message, "description")) or _optional_string(
+        data.get("description")
+    )
+    summary = _optional_string(_extract_attr(message, "summary")) or _optional_string(data.get("summary"))
+    last_tool = _optional_string(_extract_attr(message, "last_tool_name")) or _optional_string(
+        data.get("last_tool_name")
+    )
+    usage = _extract_attr(message, "usage")
+    usage = usage if isinstance(usage, dict) else data.get("usage")
+    progress: dict[str, Any] = {"taskId": task_id, "subtype": subtype or "task_updated"}
+    if tool_use_id:
+        progress["toolUseId"] = tool_use_id
+    if status:
+        progress["status"] = status
+    if description:
+        progress["description"] = description
+    if summary:
+        progress["summary"] = summary
+    if last_tool:
+        progress["lastToolName"] = last_tool
+    if isinstance(usage, dict):
+        progress["usage"] = {
+            "totalTokens": _int(usage.get("total_tokens")) or 0,
+            "toolUses": _int(usage.get("tool_uses")) or 0,
+            "durationMs": _int(usage.get("duration_ms")) or 0,
+        }
+    return progress
+
+
+def _merge_subagent_progress(
+    existing: dict[str, Any] | None,
+    incoming: dict[str, Any],
+) -> dict[str, Any]:
+    """Fold a new task_* event onto the accumulated sub-agent state. Later
+    non-empty fields win; a terminal status is sticky (a late non-terminal
+    update can't un-finish a sub-agent), and usage is kept once seen."""
+    merged = dict(existing) if isinstance(existing, dict) else {}
+    prior_status = merged.get("status")
+    for key, value in incoming.items():
+        if value in (None, ""):
+            continue
+        merged[key] = value
+    if prior_status in _TERMINAL_TASK_STATUSES and incoming.get("status") not in _TERMINAL_TASK_STATUSES:
+        merged["status"] = prior_status
+    merged["finished"] = merged.get("status") in _TERMINAL_TASK_STATUSES
+    return merged
 
 
 def _permission_allow(sdk: Any, input_data: dict[str, Any]) -> Any:
@@ -1250,7 +1819,11 @@ def _turn_end_item(
     status: str,
     result: str,
     stop_reason: str,
+    usage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    content: dict[str, Any] = {"stopReason": stop_reason, "result": result}
+    if usage:
+        content["usage"] = usage
     return _timeline_item(
         id=f"{turn_id}:turn-end",
         session_id=runtime.session_id,
@@ -1258,7 +1831,7 @@ def _turn_end_item(
         item_type="turn.end",
         status=status,
         role=None,
-        content={"stopReason": stop_reason, "result": result},
+        content=content,
         external_session_id=runtime.external_session_id,
         source_item_type="turn.end",
         derived_key="turn-end",
@@ -1326,6 +1899,19 @@ def _approval_payload(
     input_data: dict[str, Any],
 ) -> dict[str, Any]:
     kind = _approval_kind(tool_name)
+    # AskUserQuestion is not a gate ("run it or not") but a prompt for the user to
+    # pick from N options. Signal that with kind="question" + choices=["answer",
+    # "reject"] so clients render a question card; the questions payload carries
+    # the options.
+    # Gate tools offer "approve for session" so the client can render the
+    # remember-my-choice button; the connector then auto-allows identical calls
+    # for the rest of the session (see _can_use_tool / session_approved_rules).
+    # AskUserQuestion is a prompt, not a gate, so it has no session-grant option.
+    choices = (
+        ["answer", "reject"]
+        if tool_name == "AskUserQuestion"
+        else ["approve", "approve_for_session", "reject"]
+    )
     return {
         "id": approval_id,
         "sessionId": runtime.session_id,
@@ -1335,7 +1921,7 @@ def _approval_payload(
         "title": f"Claude requests {tool_name}",
         "description": _approval_description(tool_name, input_data),
         "payload": {"toolName": tool_name, "input": input_data},
-        "choices": ["approve", "reject"],
+        "choices": choices,
         "source": {
             "runtime": "claude",
             "requestId": approval_id,
@@ -1351,7 +1937,37 @@ def _approval_kind(tool_name: str) -> str:
         return "command"
     if tool_name in {"Edit", "Write", "NotebookEdit"}:
         return "file_change"
+    if tool_name == "AskUserQuestion":
+        return "question"
     return "tool_call"
+
+
+def _selections_to_answers(selections: Any) -> dict[str, Any]:
+    """Convert client-sent selections into the CLI's `answers` map.
+
+    Client sends: [{"question": "<question text>", "labels": ["<label>", ...]}].
+    The CLI expects {question_text: answer_string | [answer_string, ...]}; a
+    single label collapses to a string, multiple labels stay a list (the CLI
+    joins them with ", " itself).
+    """
+    answers: dict[str, Any] = {}
+    if not isinstance(selections, list):
+        return answers
+    for entry in selections:
+        if not isinstance(entry, dict):
+            continue
+        question = entry.get("question")
+        labels = entry.get("labels")
+        if not isinstance(question, str) or not question:
+            continue
+        if isinstance(labels, str):
+            answers[question] = labels
+        elif isinstance(labels, list):
+            values = [label for label in labels if isinstance(label, str) and label]
+            if not values:
+                continue
+            answers[question] = values[0] if len(values) == 1 else values
+    return answers
 
 
 def _approval_description(tool_name: str, input_data: dict[str, Any]) -> str:
@@ -1364,6 +1980,14 @@ def _approval_description(tool_name: str, input_data: dict[str, Any]) -> str:
 
 def _approval_id(session_id: str, turn_id: str | None, tool_name: str, input_data: dict[str, Any]) -> str:
     return "appr_" + _short_hash([session_id, turn_id, tool_name, input_data])
+
+
+def _approval_rule_key(tool_name: str, input_data: dict[str, Any]) -> str:
+    # Grant key for "approve for this session". Intentionally excludes
+    # session_id/turn_id (the runtime set is already session-scoped, and the
+    # grant must span turns) and is parameter-exact on the canonicalized input,
+    # so a grant is scoped to the precise tool call the user actually saw.
+    return "rule_" + _short_hash([tool_name, input_data])
 
 
 def _turn_id(session_id: str, content: str) -> str:

@@ -26,3 +26,10 @@ class NormalizedClaudeEvent:
     # a sub-agent's live output under the Task card that spawned it instead of
     # letting it leak into the main conversation.
     parentToolUseId: str | None = None
+    # True for a redacted (encrypted) thinking block whose prose the client
+    # cannot show. The reasoning card renders a placeholder instead of text.
+    reasoningRedacted: bool = False
+    # Set on a compact_boundary event (blockType == "compact"). Holds the CLI's
+    # compactMetadata (trigger / preTokens / postTokens / ...) so the reducer can
+    # emit a "context compacted: N -> M tokens" separator card.
+    compactMetadata: dict[str, Any] | None = None

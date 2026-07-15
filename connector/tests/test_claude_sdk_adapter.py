@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from connector.claude.history_adapter import ClaudeHistoryAdapter
-from connector.claude.sdk_adapter import ClaudeSdkAdapter
+from connector.claude.sdk_adapter import ClaudeSdkAdapter, _approval_rule_key
 from connector.launch import launch_target
 
 
@@ -32,6 +32,38 @@ class FakeToolResultBlock:
     content: Any
     is_error: bool = False
     type: str = "tool_result"
+
+
+# Real SDK sub-agent progress subclasses. The adapter keys off the class name
+# (see _TASK_MESSAGE_CLASSES) so the names here must match the SDK's exactly.
+@dataclass
+class TaskStartedMessage:
+    task_id: str
+    description: str | None = None
+    tool_use_id: str | None = None
+    session_id: str | None = None
+    subtype: str = "task_started"
+
+
+@dataclass
+class TaskUpdatedMessage:
+    task_id: str
+    patch: dict[str, Any] | None = None
+    status: str | None = None
+    session_id: str | None = None
+    subtype: str = "task_updated"
+
+
+@dataclass
+class TaskNotificationMessage:
+    task_id: str
+    status: str | None = None
+    summary: str | None = None
+    output_file: str | None = None
+    tool_use_id: str | None = None
+    usage: dict[str, Any] | None = None
+    session_id: str | None = None
+    subtype: str = "task_notification"
 
 
 @dataclass
@@ -91,6 +123,8 @@ class FakeClient:
         self.connected = False
         self.queries: list[Any] = []
         self.interrupted = False
+        self.model_calls: list = []
+        self.permission_mode_calls: list = []
         FakeClient.instances.append(self)
 
     async def connect(self):
@@ -111,6 +145,12 @@ class FakeClient:
 
     async def interrupt(self):
         self.interrupted = True
+
+    async def set_model(self, model):
+        self.model_calls.append(model)
+
+    async def set_permission_mode(self, mode):
+        self.permission_mode_calls.append(mode)
 
 
 class FailingClient(FakeClient):
@@ -234,6 +274,66 @@ class TaskUpdateClient(FakeClient):
         yield FakeResultMessage(session_id="claude_session_task_update")
 
 
+class SubagentProgressClient(FakeClient):
+    """Agent tool card streams in first, then task_* progress lands on it."""
+
+    async def receive_response(self):
+        yield FakeAssistantMessage(
+            message_id="msg_agent_spawn",
+            content=[
+                FakeToolUseBlock(
+                    id="toolu_agent",
+                    name="Agent",
+                    input={"subagent_type": "general-purpose", "description": "audit deps"},
+                ),
+            ],
+        )
+        yield TaskStartedMessage(
+            task_id="task_7",
+            description="audit deps",
+            tool_use_id="toolu_agent",
+        )
+        yield TaskUpdatedMessage(
+            task_id="task_7",
+            patch={"status": "running"},
+        )
+        yield TaskNotificationMessage(
+            task_id="task_7",
+            status="completed",
+            tool_use_id="toolu_agent",
+            usage={"total_tokens": 1234, "tool_uses": 5, "duration_ms": 4200},
+        )
+        yield FakeResultMessage(session_id="claude_session_subagent")
+
+
+class SubagentProgressBeforeCardClient(FakeClient):
+    """Progress arrives before the parent Agent tool card streams in (stash-fold)."""
+
+    async def receive_response(self):
+        yield TaskStartedMessage(
+            task_id="task_9",
+            description="run migration",
+            tool_use_id="toolu_agent_late",
+        )
+        yield TaskNotificationMessage(
+            task_id="task_9",
+            status="completed",
+            tool_use_id="toolu_agent_late",
+            usage={"total_tokens": 42, "tool_uses": 1, "duration_ms": 100},
+        )
+        yield FakeAssistantMessage(
+            message_id="msg_agent_late",
+            content=[
+                FakeToolUseBlock(
+                    id="toolu_agent_late",
+                    name="Agent",
+                    input={"subagent_type": "general-purpose", "description": "run migration"},
+                ),
+            ],
+        )
+        yield FakeResultMessage(session_id="claude_session_subagent_late")
+
+
 class BlockingClient(FakeClient):
     started: asyncio.Event
     release: asyncio.Event
@@ -242,6 +342,127 @@ class BlockingClient(FakeClient):
         self.started.set()
         await self.release.wait()
         yield FakeResultMessage(session_id="claude_session_live")
+
+
+@dataclass
+class UsageResultMessage:
+    session_id: str
+    usage: dict[str, Any] | None = None
+    total_cost_usd: float | None = None
+    subtype: str = "success"
+    result: str = "done"
+    uuid: str = "result_uuid_usage"
+
+
+class ContextUsageClient(FakeClient):
+    """A turn that ends with a ResultMessage carrying usage/cost and exposes the
+    get_context_usage() RPC (mirrors the real SDK client)."""
+
+    async def receive_response(self):
+        yield FakeAssistantMessage(
+            message_id="msg_usage_assistant",
+            content=[FakeTextBlock(text="answer")],
+        )
+        yield UsageResultMessage(
+            session_id="claude_session_usage",
+            usage={
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cache_creation_input_tokens": 200,
+                "cache_read_input_tokens": 700,
+            },
+            total_cost_usd=0.0123,
+        )
+
+    async def get_context_usage(self):
+        return {
+            "totalTokens": 1050,
+            "maxTokens": 200000,
+            "percentage": 0.5,
+            "model": "claude-opus-4-8",
+            "isAutoCompactEnabled": True,
+            "autoCompactThreshold": 180000,
+        }
+
+
+class ContextUsageUnavailableClient(FakeClient):
+    """The RPC raises (older CLI / disconnect race); the turn must still finish
+    cleanly and simply omit the gauge."""
+
+    async def receive_response(self):
+        yield FakeAssistantMessage(
+            message_id="msg_usage_fail_assistant",
+            content=[FakeTextBlock(text="answer")],
+        )
+        yield UsageResultMessage(session_id="claude_session_usage_fail")
+
+    async def get_context_usage(self):
+        raise RuntimeError("get_context_usage not supported")
+
+
+@dataclass
+class FakeRateLimitInfo:
+    status: str
+    resets_at: int | None = None
+    rate_limit_type: str | None = None
+    utilization: float | None = None
+    overage_status: str | None = None
+    overage_resets_at: int | None = None
+
+
+@dataclass
+class RateLimitEvent:
+    # Class name matches the SDK's RateLimitEvent so _is_rate_limit_message picks
+    # it up by name, exactly as the real live-stream message would be matched.
+    session_id: str
+    rate_limit_info: FakeRateLimitInfo
+    uuid: str = "rate_limit_uuid"
+
+
+class RateLimitWarningClient(FakeClient):
+    """A turn that streams a rate-limit warning before the result. The connector
+    must surface it on session.updated as rateLimit."""
+
+    async def receive_response(self):
+        yield FakeAssistantMessage(
+            message_id="msg_rl_assistant",
+            content=[FakeTextBlock(text="working")],
+        )
+        yield RateLimitEvent(
+            session_id="claude_session_rl",
+            rate_limit_info=FakeRateLimitInfo(
+                status="allowed_warning",
+                resets_at=1_800_000_000,
+                rate_limit_type="five_hour",
+                utilization=0.92,
+            ),
+        )
+        yield FakeResultMessage(session_id="claude_session_rl")
+
+
+class RateLimitClearedClient(FakeClient):
+    """A rate-limit warning followed by an 'allowed' event: the warning must be
+    cleared so the client stops showing it."""
+
+    async def receive_response(self):
+        yield RateLimitEvent(
+            session_id="claude_session_rl_clear",
+            rate_limit_info=FakeRateLimitInfo(
+                status="rejected",
+                resets_at=1_800_000_000,
+                rate_limit_type="seven_day",
+                utilization=1.0,
+            ),
+        )
+        yield RateLimitEvent(
+            session_id="claude_session_rl_clear",
+            rate_limit_info=FakeRateLimitInfo(status="allowed"),
+        )
+        yield FakeAssistantMessage(
+            message_id="msg_rl_clear_assistant",
+            content=[FakeTextBlock(text="recovered")],
+        )
+        yield FakeResultMessage(session_id="claude_session_rl_clear")
 
 
 class FakeSdk:
@@ -542,6 +763,173 @@ async def test_claude_sdk_adapter_filters_live_task_update_tool_events():
 
 
 @pytest.mark.anyio
+async def test_claude_sdk_adapter_merges_subagent_progress_into_parent_card():
+    class SubagentSdk(FakeSdk):
+        ClaudeSDKClient = SubagentProgressClient
+
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=SubagentSdk)
+    await adapter.start_turn(
+        {
+            "sessionId": "sess_subagent",
+            "cwd": "/repo",
+            "externalSessionId": "claude_session_subagent",
+            "content": "spawn a sub-agent",
+        }
+    )
+    await adapter._sessions["sess_subagent"].active_task
+
+    tool_items = [
+        params["item"]
+        for method, params in notifications
+        if method == "timeline.itemUpsert" and params["item"]["type"] == "tool"
+    ]
+    # The Agent card is the only tool card, re-upserted as each task_* event lands.
+    assert len({item["id"] for item in tool_items}) == 1
+    assert tool_items[0]["content"]["toolName"] == "Agent"
+    final = tool_items[-1]
+    subagent = final["content"]["subagent"]
+    assert subagent["taskId"] == "task_7"
+    # description carried from TaskStarted, sticky across the bare TaskUpdated.
+    assert subagent["description"] == "audit deps"
+    # terminal status + usage folded in from the TaskNotification.
+    assert subagent["status"] == "completed"
+    assert subagent["finished"] is True
+    assert subagent["usage"] == {"totalTokens": 1234, "toolUses": 5, "durationMs": 4200}
+    # revisions strictly increase as progress accumulates on the same card.
+    revisions = [item["revision"] for item in tool_items]
+    assert revisions == sorted(revisions)
+    assert revisions[-1] > revisions[0]
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_folds_stashed_subagent_progress_on_late_card():
+    class SubagentLateSdk(FakeSdk):
+        ClaudeSDKClient = SubagentProgressBeforeCardClient
+
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=SubagentLateSdk)
+    await adapter.start_turn(
+        {
+            "sessionId": "sess_subagent_late",
+            "cwd": "/repo",
+            "externalSessionId": "claude_session_subagent_late",
+            "content": "spawn a sub-agent",
+        }
+    )
+    await adapter._sessions["sess_subagent_late"].active_task
+
+    tool_items = [
+        params["item"]
+        for method, params in notifications
+        if method == "timeline.itemUpsert" and params["item"]["type"] == "tool"
+    ]
+    assert tool_items, "expected the parent Agent card to be emitted"
+    # Progress that arrived before the card was stashed and folded on first prepare.
+    final = tool_items[-1]
+    subagent = final["content"]["subagent"]
+    assert subagent["taskId"] == "task_9"
+    assert subagent["description"] == "run migration"
+    assert subagent["status"] == "completed"
+    assert subagent["finished"] is True
+    assert subagent["usage"] == {"totalTokens": 42, "toolUses": 1, "durationMs": 100}
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_emits_turn_usage_and_context_gauge():
+    class UsageSdk(FakeSdk):
+        ClaudeSDKClient = ContextUsageClient
+
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=UsageSdk)
+    await adapter.start_turn(
+        {
+            "sessionId": "sess_usage",
+            "cwd": "/repo",
+            "externalSessionId": "claude_session_usage",
+            "content": "hi",
+        }
+    )
+    await adapter._sessions["sess_usage"].active_task
+
+    # turn.end carries the per-turn usage flattened from ResultMessage.usage/cost.
+    turn_end = next(
+        params["item"]
+        for method, params in notifications
+        if method == "timeline.itemUpsert" and params["item"]["type"] == "turn.end"
+    )
+    usage = turn_end["content"]["usage"]
+    assert usage["inputTokens"] == 100
+    assert usage["outputTokens"] == 50
+    assert usage["cacheCreationTokens"] == 200
+    assert usage["cacheReadTokens"] == 700
+    # totalTokens = input + cache_creation + cache_read + output.
+    assert usage["totalTokens"] == 1050
+    assert usage["costUsd"] == 0.0123
+
+    # session.updated (emitted at idle) carries the context gauge captured from
+    # get_context_usage() after the receive loop, while the client was connected.
+    context_updates = [
+        params["contextUsage"]
+        for method, params in notifications
+        if method == "session.updated" and params.get("contextUsage") is not None
+    ]
+    assert context_updates, "expected a session.updated carrying contextUsage"
+    gauge = context_updates[-1]
+    assert gauge["totalTokens"] == 1050
+    assert gauge["maxTokens"] == 200000
+    assert gauge["percentage"] == 0.5
+    assert gauge["autoCompactEnabled"] is True
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_turn_finishes_when_context_gauge_unavailable():
+    class UsageFailSdk(FakeSdk):
+        ClaudeSDKClient = ContextUsageUnavailableClient
+
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=UsageFailSdk)
+    await adapter.start_turn(
+        {
+            "sessionId": "sess_usage_fail",
+            "cwd": "/repo",
+            "externalSessionId": "claude_session_usage_fail",
+            "content": "hi",
+        }
+    )
+    await adapter._sessions["sess_usage_fail"].active_task
+
+    # The RPC raised, so no gauge is attached, but the turn still ends cleanly.
+    turn_end = next(
+        params["item"]
+        for method, params in notifications
+        if method == "timeline.itemUpsert" and params["item"]["type"] == "turn.end"
+    )
+    assert turn_end["status"] == "done"
+    assert not any(
+        params.get("contextUsage") is not None
+        for method, params in notifications
+        if method == "session.updated"
+    )
+
+
+@pytest.mark.anyio
 async def test_claude_sdk_adapter_skips_active_session_during_history_scan():
     class BlockingSdk(FakeSdk):
         ClaudeSDKClient = BlockingClient
@@ -738,6 +1126,9 @@ async def test_claude_sdk_adapter_approval_bridge_resolves_to_sdk_allow():
     approvals = [params for method, params in notifications if method == "approval.requested"]
     assert len(approvals) == 1
     assert approvals[0]["kind"] == "command"
+    # Gate tools offer "approve for session" so clients can render that button;
+    # without it the approved_for_session persistence path is unreachable.
+    assert "approve_for_session" in approvals[0]["choices"]
     result = await adapter.resolve_approval(
         {
             "sessionId": "sess_approval",
@@ -750,6 +1141,242 @@ async def test_claude_sdk_adapter_approval_bridge_resolves_to_sdk_allow():
     assert result == {"resolved": True}
     assert isinstance(permission, FakeAllow)
     assert permission.updated_input == {"command": "ls"}
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_approved_for_session_auto_allows_identical_calls():
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=FakeSdk)
+    runtime = adapter._runtime_for(
+        "sess_afs",
+        {"sessionId": "sess_afs", "externalSessionId": "claude_session_afs"},
+    )
+    runtime.active_turn_id = "turn_afs"
+    ctx = {"session_id": "claude_session_afs"}
+
+    # First call to `Read /a.txt`: prompts, user approves for the session.
+    task = asyncio.create_task(
+        adapter._can_use_tool("Read", {"file_path": "/a.txt"}, ctx)
+    )
+    await asyncio.sleep(0)
+    approvals = [p for m, p in notifications if m == "approval.requested"]
+    assert len(approvals) == 1
+    await adapter.resolve_approval(
+        {
+            "sessionId": "sess_afs",
+            "approvalId": approvals[0]["id"],
+            "status": "approved_for_session",
+        }
+    )
+    first = await task
+    assert isinstance(first, FakeAllow)
+
+    # Second identical call: auto-allowed, no new approval.requested emitted.
+    second = await adapter._can_use_tool("Read", {"file_path": "/a.txt"}, ctx)
+    assert isinstance(second, FakeAllow)
+    assert second.updated_input == {"file_path": "/a.txt"}
+    approvals = [p for m, p in notifications if m == "approval.requested"]
+    assert len(approvals) == 1  # still just the one from the first call
+
+    # A different parameter is NOT covered by the grant: it prompts again.
+    task = asyncio.create_task(
+        adapter._can_use_tool("Read", {"file_path": "/b.txt"}, ctx)
+    )
+    await asyncio.sleep(0)
+    approvals = [p for m, p in notifications if m == "approval.requested"]
+    assert len(approvals) == 2
+    await adapter.resolve_approval(
+        {
+            "sessionId": "sess_afs",
+            "approvalId": approvals[-1]["id"],
+            "status": "approved",
+        }
+    )
+    await task
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_session_grants_do_not_leak_across_sessions():
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+    runtime_a = adapter._runtime_for(
+        "sess_a",
+        {"sessionId": "sess_a", "externalSessionId": "claude_session_a"},
+    )
+    runtime_a.active_turn_id = "turn_a"
+    runtime_a.session_approved_rules.add(_approval_rule_key("Read", {"file_path": "/a.txt"}))
+
+    # A brand-new session has its own empty grant set: the same call still prompts.
+    runtime_b = adapter._runtime_for(
+        "sess_b",
+        {"sessionId": "sess_b", "externalSessionId": "claude_session_b"},
+    )
+    runtime_b.active_turn_id = "turn_b"
+    assert not runtime_b.session_approved_rules
+
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    adapter.notification_sink = sink
+    task = asyncio.create_task(
+        adapter._can_use_tool("Read", {"file_path": "/a.txt"}, {"session_id": "claude_session_b"})
+    )
+    await asyncio.sleep(0)
+    approvals = [p for m, p in notifications if m == "approval.requested"]
+    assert len(approvals) == 1
+    await adapter.resolve_approval(
+        {"sessionId": "sess_b", "approvalId": approvals[0]["id"], "status": "approved"}
+    )
+    await task
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_ask_user_question_emits_question_kind():
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=FakeSdk)
+    runtime = adapter._runtime_for(
+        "sess_q",
+        {"sessionId": "sess_q", "externalSessionId": "claude_session_q"},
+    )
+    runtime.active_turn_id = "turn_q"
+
+    question_input = {
+        "questions": [
+            {
+                "header": "Push method",
+                "question": "How should we push?",
+                "multiSelect": False,
+                "options": [
+                    {"label": "HTTPS", "description": "use https"},
+                    {"label": "SSH", "description": "use ssh"},
+                ],
+            }
+        ]
+    }
+    task = asyncio.create_task(
+        adapter._can_use_tool("AskUserQuestion", question_input, {"session_id": "claude_session_q"})
+    )
+    await asyncio.sleep(0)
+
+    approvals = [params for method, params in notifications if method == "approval.requested"]
+    assert len(approvals) == 1
+    # AskUserQuestion is a question, not a gate: kind="question", choices offer
+    # "answer" instead of "approve", and the questions payload rides along.
+    assert approvals[0]["kind"] == "question"
+    assert approvals[0]["choices"] == ["answer", "reject"]
+    assert approvals[0]["payload"]["input"]["questions"][0]["header"] == "Push method"
+
+    result = await adapter.resolve_approval(
+        {
+            "sessionId": "sess_q",
+            "approvalId": approvals[0]["id"],
+            "status": "approved",
+            "selections": [{"question": "How should we push?", "labels": ["HTTPS"]}],
+        }
+    )
+    permission = await task
+
+    assert result == {"resolved": True}
+    assert isinstance(permission, FakeAllow)
+    # The user's selection is merged into the tool input under `answers`
+    # (question text -> answer string) so the CLI surfaces it to the model.
+    assert permission.updated_input["answers"] == {"How should we push?": "HTTPS"}
+    assert permission.updated_input["questions"] == question_input["questions"]
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_ask_user_question_multi_select_keeps_list():
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=FakeSdk)
+    runtime = adapter._runtime_for(
+        "sess_qm",
+        {"sessionId": "sess_qm", "externalSessionId": "claude_session_qm"},
+    )
+    runtime.active_turn_id = "turn_qm"
+
+    question_input = {
+        "questions": [
+            {
+                "header": "Features",
+                "question": "Which features?",
+                "multiSelect": True,
+                "options": [
+                    {"label": "A", "description": ""},
+                    {"label": "B", "description": ""},
+                ],
+            }
+        ]
+    }
+    task = asyncio.create_task(
+        adapter._can_use_tool("AskUserQuestion", question_input, {"session_id": "claude_session_qm"})
+    )
+    await asyncio.sleep(0)
+
+    approvals = [params for method, params in notifications if method == "approval.requested"]
+    result = await adapter.resolve_approval(
+        {
+            "sessionId": "sess_qm",
+            "approvalId": approvals[0]["id"],
+            "status": "approved",
+            "selections": [{"question": "Which features?", "labels": ["A", "B"]}],
+        }
+    )
+    permission = await task
+
+    assert result == {"resolved": True}
+    # Multiple labels stay a list; the CLI joins them with ", " itself.
+    assert permission.updated_input["answers"] == {"Which features?": ["A", "B"]}
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_ask_user_question_reject_without_answers():
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=FakeSdk)
+    runtime = adapter._runtime_for(
+        "sess_qr",
+        {"sessionId": "sess_qr", "externalSessionId": "claude_session_qr"},
+    )
+    runtime.active_turn_id = "turn_qr"
+
+    task = asyncio.create_task(
+        adapter._can_use_tool(
+            "AskUserQuestion",
+            {"questions": [{"question": "Which?", "options": [{"label": "A"}]}]},
+            {"session_id": "claude_session_qr"},
+        )
+    )
+    await asyncio.sleep(0)
+
+    approvals = [params for method, params in notifications if method == "approval.requested"]
+    # Skip = reject with no selections: the tool is denied, no answers injected.
+    result = await adapter.resolve_approval(
+        {
+            "sessionId": "sess_qr",
+            "approvalId": approvals[0]["id"],
+            "status": "rejected",
+        }
+    )
+    permission = await task
+
+    assert result == {"resolved": True}
+    assert isinstance(permission, FakeDeny)
 
 
 @pytest.mark.anyio
@@ -890,3 +1517,88 @@ async def test_claude_sdk_adapter_surfaces_stderr_on_turn_failure():
     assert errors
     assert errors[-1]["stderr"] == "Error: auth_token=***\nreal failure detail"
     assert "real failure detail" in errors[-1]["message"]
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_surfaces_rate_limit_warning_on_session_update():
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    class RateLimitSdk(FakeSdk):
+        ClaudeSDKClient = RateLimitWarningClient
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=RateLimitSdk)
+    await adapter.start_turn(
+        {
+            "sessionId": "sess_rl",
+            "cwd": "/repo",
+            "externalSessionId": "claude_session_rl",
+            "content": "hi",
+        }
+    )
+    await adapter._sessions["sess_rl"].active_task
+
+    # The RateLimitEvent is no longer swallowed by the system branch: it rides a
+    # session.updated as a flattened rateLimit snapshot.
+    rate_updates = [
+        params["rateLimit"]
+        for method, params in notifications
+        if method == "session.updated" and params.get("rateLimit") is not None
+    ]
+    assert rate_updates, "expected a session.updated carrying rateLimit"
+    snapshot = rate_updates[-1]
+    assert snapshot["status"] == "allowed_warning"
+    assert snapshot["type"] == "five_hour"
+    assert snapshot["resetsAt"] == 1_800_000_000
+    assert snapshot["utilization"] == 0.92
+
+    # The turn still finishes normally alongside the warning.
+    turn_end = [
+        params["item"]
+        for method, params in notifications
+        if method == "timeline.itemUpsert" and params["item"]["type"] == "turn.end"
+    ]
+    assert turn_end and turn_end[-1]["status"] == "done"
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_clears_rate_limit_once_throttling_lifts():
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    class RateLimitClearSdk(FakeSdk):
+        ClaudeSDKClient = RateLimitClearedClient
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=RateLimitClearSdk)
+    await adapter.start_turn(
+        {
+            "sessionId": "sess_rl_clear",
+            "cwd": "/repo",
+            "externalSessionId": "claude_session_rl_clear",
+            "content": "hi",
+        }
+    )
+    await adapter._sessions["sess_rl_clear"].active_task
+
+    # A "rejected" event set the snapshot; the following "allowed" supersedes it
+    # with a status="allowed" snapshot (NOT None) — the DB write path only stores
+    # the column when rateLimit is present, so a clear must be an explicit
+    # allowed snapshot the client reads, not a dropped field.
+    runtime = adapter._sessions["sess_rl_clear"]
+    assert runtime.rate_limit == {"status": "allowed"}
+
+    updates = [
+        params
+        for method, params in notifications
+        if method == "session.updated" and params.get("rateLimit") is not None
+    ]
+    assert updates
+    # The final rateLimit snapshot reads "allowed" so the client hides the warning.
+    assert updates[-1]["rateLimit"]["status"] == "allowed"
+    # But the "rejected" state WAS surfaced at least once before it cleared.
+    saw_rejected = any(u["rateLimit"].get("status") == "rejected" for u in updates)
+    assert saw_rejected

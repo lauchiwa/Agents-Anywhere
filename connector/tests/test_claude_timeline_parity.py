@@ -253,6 +253,207 @@ def test_claude_task_event_tools_are_filtered_from_live_and_transcript_timelines
     assert all(item["type"] != "tool" for item in transcript_items)
 
 
+def test_claude_variant_specific_tools_reduce_to_readable_cards():
+    raw_turn = [
+        {
+            "uuid": "evt_tools",
+            "session_id": "claude_sess_1",
+            "timestamp": "2026-06-04T00:00:01Z",
+            "message": {
+                "id": "msg_assistant_1",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_wake",
+                        "name": "ScheduleWakeup",
+                        "input": {
+                            "delaySeconds": 120,
+                            "prompt": "检查 Windows 打包后台任务结果",
+                            "reason": "等待外部构建",
+                        },
+                    },
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_stop",
+                        "name": "TaskStop",
+                        "input": {"taskId": "build-42"},
+                    },
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_search",
+                        "name": "ToolSearch",
+                        "input": {"max_results": 3, "query": "select:TaskStop"},
+                    },
+                ],
+            },
+        },
+        {
+            "uuid": "evt_tools_result",
+            "session_id": "claude_sess_1",
+            "timestamp": "2026-06-04T00:00:02Z",
+            "message": {
+                "id": "msg_tool_results",
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "toolu_wake", "content": "Scheduled"},
+                    {"type": "tool_result", "tool_use_id": "toolu_stop", "content": "Stopped build-42"},
+                    {"type": "tool_result", "tool_use_id": "toolu_search", "content": "1 tool loaded"},
+                ],
+            },
+        },
+    ]
+
+    reducer = ClaudeTimelineReducer()
+    live_items = reducer.reduce(
+        session_id="sess_1",
+        turn_id="turn_1",
+        events=ClaudeLiveNormalizer().normalize(raw_turn),
+    )
+    transcript_items = reducer.reduce(
+        session_id="sess_1",
+        turn_id="turn_1",
+        events=ClaudeTranscriptNormalizer().normalize(raw_turn),
+    )
+
+    for items in (live_items, transcript_items):
+        tools = [item for item in items if item["type"] == "tool"]
+        assert len(tools) == 3
+
+        wake = next(item for item in tools if item["content"]["toolUseId"] == "toolu_wake")
+        assert wake["content"]["kind"] == "schedule_wakeup"
+        assert wake["content"]["delaySeconds"] == 120
+        assert wake["content"]["reason"] == "等待外部构建"
+        assert wake["content"]["prompt"] == "检查 Windows 打包后台任务结果"
+
+        stop = next(item for item in tools if item["content"]["toolUseId"] == "toolu_stop")
+        assert stop["content"]["kind"] == "task_stop"
+        assert stop["content"]["target"] == "build-42"
+
+        search = next(item for item in tools if item["content"]["toolUseId"] == "toolu_search")
+        assert search["content"]["kind"] == "tool_search"
+        assert search["content"]["query"] == "select:TaskStop"
+        assert search["content"]["maxResults"] == 3
+
+
+def test_claude_thinking_block_reduces_to_reasoning_card_without_colliding_with_text():
+    # An assistant message carrying both an extended-thinking block and the
+    # visible answer text. They share the same parent message id, so the
+    # reasoning item must get its own block-index-derived id instead of
+    # colliding with (and overwriting) the answer message. Live transcript
+    # JSONL carries the text under `thinking`; live SDK messages carry it under
+    # `text` (already normalized by _blocks_to_dicts) — accept either.
+    raw_turn = [
+        {
+            "uuid": "evt_assistant",
+            "session_id": "claude_sess_1",
+            "timestamp": "2026-06-04T00:00:01Z",
+            "message": {
+                "id": "msg_assistant_1",
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "thinking": "Let me weigh the options.", "signature": ""},
+                    {"type": "text", "text": "Here's the answer."},
+                ],
+            },
+        },
+    ]
+
+    reducer = ClaudeTimelineReducer()
+    live_items = reducer.reduce(
+        session_id="sess_1",
+        turn_id="turn_1",
+        events=ClaudeLiveNormalizer().normalize(raw_turn),
+    )
+    transcript_items = reducer.reduce(
+        session_id="sess_1",
+        turn_id="turn_1",
+        events=ClaudeTranscriptNormalizer().normalize(raw_turn),
+    )
+
+    # Both paths agree, and neither drops the reasoning or the answer.
+    assert [item["id"] for item in live_items] == [item["id"] for item in transcript_items]
+    assert [item["content"] for item in live_items] == [item["content"] for item in transcript_items]
+
+    reasoning = [item for item in live_items if item["content"].get("kind") == "reasoning"]
+    messages = [item for item in live_items if item["type"] == "message"]
+    assert len(reasoning) == 1
+    assert len(messages) == 1
+    # The reasoning card is a system item the clients render collapsibly.
+    assert reasoning[0]["type"] == "system"
+    assert reasoning[0]["role"] == "system"
+    assert reasoning[0]["content"] == {"kind": "reasoning", "text": "Let me weigh the options."}
+    # Distinct ids: reasoning must not overwrite the answer message.
+    assert reasoning[0]["id"] != messages[0]["id"]
+    assert messages[0]["content"]["text"] == "Here's the answer."
+
+
+def test_claude_redacted_thinking_reduces_to_a_hidden_reasoning_card():
+    # A redacted_thinking block carries no plaintext. The live path routes it
+    # through _blocks_to_dicts (type "thinking" + redacted flag, empty text);
+    # the transcript-replay path passes the raw JSONL straight through (type
+    # "redacted_thinking", encrypted data, no prose). Both must survive as a
+    # single reasoning card flagged redacted, so the client shows a "reasoning
+    # hidden" placeholder instead of silently dropping it.
+    live_turn = [
+        {
+            "uuid": "evt_assistant",
+            "session_id": "claude_sess_1",
+            "timestamp": "2026-06-04T00:00:01Z",
+            "message": {
+                "id": "msg_assistant_1",
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "text": "", "redacted": True},
+                    {"type": "text", "text": "Here's the answer."},
+                ],
+            },
+        },
+    ]
+    transcript_turn = [
+        {
+            "uuid": "evt_assistant",
+            "session_id": "claude_sess_1",
+            "timestamp": "2026-06-04T00:00:01Z",
+            "message": {
+                "id": "msg_assistant_1",
+                "role": "assistant",
+                "content": [
+                    {"type": "redacted_thinking", "data": "EncRypTedBlOb=="},
+                    {"type": "text", "text": "Here's the answer."},
+                ],
+            },
+        },
+    ]
+
+    reducer = ClaudeTimelineReducer()
+    live_items = reducer.reduce(
+        session_id="sess_1",
+        turn_id="turn_1",
+        events=ClaudeLiveNormalizer().normalize(live_turn),
+    )
+    transcript_items = reducer.reduce(
+        session_id="sess_1",
+        turn_id="turn_1",
+        events=ClaudeTranscriptNormalizer().normalize(transcript_turn),
+    )
+
+    # Both shapes converge on identical timeline ids and content.
+    assert [item["id"] for item in live_items] == [item["id"] for item in transcript_items]
+    assert [item["content"] for item in live_items] == [item["content"] for item in transcript_items]
+
+    reasoning = [item for item in live_items if item["content"].get("kind") == "reasoning"]
+    messages = [item for item in live_items if item["type"] == "message"]
+    assert len(reasoning) == 1
+    assert len(messages) == 1
+    # The card survives, flagged redacted, with an empty body (no leaked prose).
+    assert reasoning[0]["type"] == "system"
+    assert reasoning[0]["content"] == {"kind": "reasoning", "text": "", "redacted": True}
+    # Distinct ids: the redacted card must not overwrite the answer message.
+    assert reasoning[0]["id"] != messages[0]["id"]
+    assert messages[0]["content"]["text"] == "Here's the answer."
+
+
 def test_claude_subagent_output_is_linked_to_parent_task_item():
     # A real Task (sub-agent) tool_use, followed by sub-agent-internal output
     # that carries parent_tool_use_id pointing back at the Task. The sub-agent
@@ -323,3 +524,80 @@ def test_claude_subagent_output_is_linked_to_parent_task_item():
         assert task_item.get("parentItemId") is None
         assert sub_text["parentItemId"] == task_item["id"]
         assert sub_tool["parentItemId"] == task_item["id"]
+
+
+def test_claude_compact_boundary_reduces_to_a_separator_card():
+    # The CLI writes a top-level {"type":"system","subtype":"compact_boundary",
+    # "compactMetadata":{...}} record when it auto-compacts the context window.
+    # It has no content array, so the old normalizer dropped it and the timeline
+    # "jumped" with no explanation. It must now surface as a system separator
+    # carrying the trigger and before/after token counts, identically on the
+    # live and history-replay paths.
+    raw_turn = [
+        {
+            "uuid": "evt_user",
+            "session_id": "claude_sess_1",
+            "timestamp": "2026-06-04T00:00:01Z",
+            "message": {"id": "msg_user_1", "role": "user", "content": "hi"},
+        },
+        {
+            "uuid": "evt_compact",
+            "session_id": "claude_sess_1",
+            "timestamp": "2026-06-04T00:00:02Z",
+            "type": "system",
+            "subtype": "compact_boundary",
+            "compactMetadata": {
+                "trigger": "auto",
+                "preTokens": 160000,
+                "postTokens": 42000,
+                "cumulativeDroppedTokens": 118000,
+                "durationMs": 1234,
+            },
+        },
+        {
+            "uuid": "evt_assistant",
+            "session_id": "claude_sess_1",
+            "timestamp": "2026-06-04T00:00:03Z",
+            "message": {
+                "id": "msg_assistant_1",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "after compaction"}],
+            },
+        },
+    ]
+
+    reducer = ClaudeTimelineReducer()
+    live_items = reducer.reduce(
+        session_id="sess_1",
+        turn_id="turn_1",
+        events=ClaudeLiveNormalizer().normalize(raw_turn),
+    )
+    transcript_items = reducer.reduce(
+        session_id="sess_1",
+        turn_id="turn_1",
+        events=ClaudeTranscriptNormalizer().normalize(raw_turn),
+    )
+
+    # Live and replay converge on the same ids and content.
+    assert [item["id"] for item in live_items] == [item["id"] for item in transcript_items]
+    assert [item["content"] for item in live_items] == [item["content"] for item in transcript_items]
+
+    compact = [item for item in live_items if item["content"].get("kind") == "compact"]
+    assert len(compact) == 1
+    assert compact[0]["type"] == "system"
+    assert compact[0]["role"] == "system"
+    assert compact[0]["content"] == {
+        "kind": "compact",
+        "trigger": "auto",
+        "preTokens": 160000,
+        "postTokens": 42000,
+        "droppedTokens": 118000,
+    }
+
+    # Ordering is preserved: the separator sits between the user turn and the
+    # post-compaction assistant reply, with no duplication.
+    kinds = [
+        item["type"] if item["content"].get("kind") != "compact" else "compact"
+        for item in live_items
+    ]
+    assert kinds == ["message", "compact", "message"]
