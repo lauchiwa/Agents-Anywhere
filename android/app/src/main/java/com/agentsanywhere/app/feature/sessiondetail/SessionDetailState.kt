@@ -169,4 +169,7 @@ enum class TimelineMessageKind {
     // compacted: N -> M tokens") the connector emits where the CLI auto-
     // compacted the window, so the user knows why earlier history vanished.
     Compact,
+    // CLI-initiated Notification hook: a message asking for the user's
+    // attention (e.g. a permission prompt) surfaced as its own card.
+    Notification,
 }

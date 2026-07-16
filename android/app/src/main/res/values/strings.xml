@@ -335,6 +335,7 @@
     <string name="session_subagent_tokens">%1$s tokens</string>
     <string name="session_subagent_duration">%1$ss</string>
     <string name="session_context_compacted">Context compacted</string>
+    <string name="session_notification">Notification</string>
     <string name="session_context_compacted_tokens">%1$s tokens</string>
     <string name="session_rate_limit_warning">Quota almost full</string>
     <string name="session_rate_limited">Rate limited</string>

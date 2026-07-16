@@ -847,6 +847,7 @@ private fun TimelineMessageRow(
             children = childrenByParent[message.id].orEmpty(),
             onOpenFile = onOpenFile,
         )
+        TimelineMessageKind.Notification -> NotificationCard(message, darkMode)
         TimelineMessageKind.System -> ToolPlaceholder(message, darkMode)
         TimelineMessageKind.Compact -> CompactSeparator(message, darkMode)
         TimelineMessageKind.Text -> when (message.author) {
@@ -1134,6 +1135,43 @@ private fun CompactSeparator(message: TimelineMessage, darkMode: Boolean) {
 }
 
 @Composable
+private fun NotificationCard(message: TimelineMessage, darkMode: Boolean) {
+    // CLI-initiated Notification hook (include_hook_events). A message asking for
+    // the user's attention that has no other channel; render an amber-accented
+    // note distinct from ordinary tool/system output. title rides in subtitle.
+    val accent = if (darkMode) Color(0xFFE0973A) else Color(0xFFB9791F)
+    val bg = if (darkMode) Color(0x1FE0973A) else Color(0x14B9791F)
+    val body = if (darkMode) Color(0xFFE4E3DE) else Color(0xFF1F1E1B)
+    val heading = message.subtitle.ifBlank { stringResource(R.string.session_notification) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(bg)
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = heading,
+                color = accent,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (message.text.isNotBlank()) {
+                Text(
+                    text = message.text,
+                    color = body,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ReasoningSection(message: TimelineMessage, darkMode: Boolean) {
     val muted = if (darkMode) Color(0xFFA1A1AA) else Color(0xFF7C7B76)
     val streaming = message.status == "running"
@@ -1342,6 +1380,7 @@ private fun SubagentChildren(
                         embedded = true,
                         onOpenFile = onOpenFile,
                     )
+                    TimelineMessageKind.Notification -> NotificationCard(child, darkMode)
                     TimelineMessageKind.System -> ToolPlaceholder(child, darkMode)
                     TimelineMessageKind.Compact -> CompactSeparator(child, darkMode)
                     TimelineMessageKind.Text -> when (child.author) {

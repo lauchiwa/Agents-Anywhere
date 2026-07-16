@@ -755,6 +755,28 @@ class SessionDetailController(
                 parentItemId = parentItemId,
             )
         }
+        if (kind == "notification") {
+            // CLI-initiated Notification hook: a message asking for the user's
+            // attention. The title is optional; fall back to a generic label in
+            // the card when absent.
+            val message = content.text("message") ?: content.text("text")
+            if (message.isNullOrBlank()) return null
+            return TimelineMessage(
+                id = id,
+                sourceItemId = id,
+                author = MessageAuthor.Tool,
+                text = message,
+                status = status,
+                type = type,
+                kind = TimelineMessageKind.Notification,
+                title = content.text("title").orEmpty(),
+                orderSeq = orderSeq,
+                updatedSeq = updatedSeq,
+                clientMessageId = source.text("clientMessageId"),
+                turnId = turnId,
+                parentItemId = parentItemId,
+            )
+        }
         val message = content.text("message") ?: content.text("text") ?: kind
         if (message.isBlank()) return null
         return TimelineMessage(
