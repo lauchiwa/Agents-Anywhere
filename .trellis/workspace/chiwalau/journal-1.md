@@ -75,3 +75,36 @@ Web ToolDetailPanel: arguments/result/error as separate CodePanel sections for k
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Session rename RPC (connector + server)
+
+**Date**: 2026-07-17
+**Task**: Session rename RPC (connector + server)
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+ClaudeSdkAdapter.rename_session calls SDK to sync custom_title on disk. Connector dispatch routes session.rename. Server PATCH /sessions/{id} fires best-effort RPC after db.rename_session. 5 connector + 2 server tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `08cf1f1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
