@@ -239,6 +239,25 @@ def test_connector_runtime_rejects_unknown_runtime() -> None:
     asyncio.run(_exercise_unknown_runtime())
 
 
+def test_connector_runtime_dispatches_mcp_status_to_claude_by_default() -> None:
+    """`mcp.status` with no runtime field ⇒ claude adapter is invoked.
+
+    MCP is Claude-only today (see runtime.py:mcp.status branch). Clients that
+    don't set `runtime` still expect a valid empty-status response instead of
+    the codex default that would otherwise 404.
+    """
+    asyncio.run(_exercise_mcp_status_dispatch())
+
+
+def test_connector_runtime_returns_empty_mcp_status_when_adapter_missing_handler() -> None:
+    """Adapter without `get_mcp_status` ⇒ dispatch returns `{"mcpServers": []}`.
+
+    Guarantees dispatch never crashes on a runtime that hasn't been upgraded
+    to the MCP surface (e.g. codex).
+    """
+    asyncio.run(_exercise_mcp_status_missing_handler())
+
+
 def test_preferences_push_sends_only_on_change() -> None:
     asyncio.run(_exercise_preferences_push())
 
@@ -1310,3 +1329,50 @@ async def _exercise_async_shell_tasks(tmp_path) -> None:
 
     assert cancel_result == {"taskId": "task_cancel", "sessionId": "sess_1", "cancelled": True}
     assert notifications[-1] == ("shell.task.completed", {"taskId": "task_cancel", "sessionId": "sess_1", "status": "cancelled"})
+
+
+async def _exercise_mcp_status_dispatch() -> None:
+    class ClaudeMcpAdapter(FakeAdapter):
+        def __init__(self) -> None:
+            super().__init__()
+            self.mcp_calls: list[dict[str, Any]] = []
+
+        async def get_mcp_status(self, params: dict[str, Any]) -> dict[str, Any]:
+            self.mcp_calls.append(params)
+            return {"mcpServers": [{"name": "docs", "status": "connected"}]}
+
+    codex = FakeAdapter()
+    claude = ClaudeMcpAdapter()
+    client = BackendRpcClient(
+        ConnectorConfig(
+            server_url="http://127.0.0.1:8000",
+            connector_id="conn_1",
+            connector_token="token",
+            sync_existing_on_connect=False,
+        ),
+        adapters={"codex": codex, "claude": claude},
+    )
+
+    result = await client.dispatch("mcp.status", {})
+
+    assert result == {"mcpServers": [{"name": "docs", "status": "connected"}]}
+    assert codex.calls == []
+    assert claude.mcp_calls == [{"runtime": "claude"}]
+
+
+async def _exercise_mcp_status_missing_handler() -> None:
+    codex = FakeAdapter()  # no get_mcp_status
+    client = BackendRpcClient(
+        ConnectorConfig(
+            server_url="http://127.0.0.1:8000",
+            connector_id="conn_1",
+            connector_token="token",
+            sync_existing_on_connect=False,
+        ),
+        adapters={"codex": codex},
+    )
+
+    result = await client.dispatch("mcp.status", {"runtime": "codex"})
+
+    assert result == {"mcpServers": []}
+    assert codex.calls == []

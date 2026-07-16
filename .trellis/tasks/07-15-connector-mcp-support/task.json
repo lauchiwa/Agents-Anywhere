@@ -3,7 +3,7 @@
   "name": "connector-mcp-support",
   "title": "MCP 接入(内进程 + 外部 server)",
   "description": "SDK 支持内进程 MCP(@tool)与外部 MCP server 及运行时状态查询,连接器完全未配 MCP(reducer 能解析 mcp__ 结果但从不注册)",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -18,7 +18,9 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "07-16-connector-mcp-client-cards"
+  ],
   "parent": null,
   "relatedFiles": [],
   "notes": "",

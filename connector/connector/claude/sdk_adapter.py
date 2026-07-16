@@ -15,6 +15,7 @@ from connector.logging import logger
 from connector.attachments import attachment_target
 from connector.adapter import NotificationSink
 from connector.claude.history_adapter import ClaudeHistoryAdapter
+from connector.claude.mcp_config import load_servers as load_mcp_servers
 from connector.claude.normalized import NormalizedClaudeEvent
 from connector.claude.normalizers import ClaudeLiveNormalizer
 from connector.claude.timeline_identity import ClaudeTimelineIdentity
@@ -25,6 +26,13 @@ from connector.time import utc_now
 
 AttachmentDownloader = Callable[[str, str], Awaitable[tuple[bytes, str, str]]]
 """(session_id, file_id) -> (data, original_name, media_type)"""
+
+McpConfigProvider = Callable[[], dict[str, dict[str, Any]]]
+"""Returns `{server_name: McpServerConfig}` dict for the SDK's `mcp_servers`.
+
+Called on every turn so hand-edits to `mcp.json` take effect without a
+connector restart. Failures should degrade to `{}` (no MCP) rather than
+crashing the turn — see `_safe_mcp_config`."""
 
 _MAX_STDERR_LINES = 80
 _MAX_STDERR_CHARS = 8000
@@ -121,6 +129,12 @@ class ClaudeSdkAdapter:
     history_adapter: ClaudeHistoryAdapter = field(default_factory=ClaudeHistoryAdapter)
     attachment_downloader: AttachmentDownloader | None = None
     claude_target: LaunchTarget | None = None
+    # Provider hook for MCP server configs. Called per-turn from
+    # `_options_kwargs` so hand-edits to `mcp.json` take effect on the next
+    # turn without a connector restart. Default reads `~/.agent-server/mcp.json`
+    # (or the `AGENT_CONNECTOR_MCP_CONFIG` env override). Tests inject a
+    # closure over an in-memory dict to keep the filesystem out of the picture.
+    mcp_config_provider: McpConfigProvider | None = None
     _sessions: dict[str, _SdkSessionRuntime] = field(default_factory=dict, init=False)
 
     @property
@@ -307,6 +321,40 @@ class ClaudeSdkAdapter:
         if not pending.future.done():
             pending.future.set_result(status)
         return {"resolved": True}
+
+    async def get_mcp_status(self, params: dict[str, Any]) -> dict[str, Any]:
+        # Query the live SDK client for its current MCP server list. This is a
+        # per-call snapshot (SDK ClaudeSDKClient.get_mcp_status()); we don't
+        # subscribe to change events. "Nothing to report" is expressed as an
+        # empty `mcpServers` list rather than an error so the client can render
+        # a stable "no MCP servers" state whether the session is idle, the SDK
+        # is too old, or no servers were configured — same shape either way.
+        # Callers include the SDK's raw response verbatim (see design doc:
+        # "return the SDK response verbatim, don't remap") minus non-dict
+        # payloads which we normalize to an empty list.
+        session_id = _optional_string(params.get("sessionId"))
+        if not session_id:
+            return {"mcpServers": []}
+        runtime = self._sessions.get(session_id)
+        if runtime is None or runtime.client is None:
+            return {"mcpServers": []}
+        getter = getattr(runtime.client, "get_mcp_status", None)
+        if not callable(getter):
+            return {"mcpServers": []}
+        try:
+            raw = await getter()
+        except Exception:
+            logger.debug(
+                "claude sdk get_mcp_status failed session_id={} external_session_id={}",
+                runtime.session_id,
+                runtime.external_session_id,
+                exc_info=True,
+            )
+            return {"mcpServers": []}
+        if isinstance(raw, dict):
+            servers = raw.get("mcpServers")
+            return {"mcpServers": servers if isinstance(servers, list) else []}
+        return {"mcpServers": []}
 
     def _runtime_for(self, session_id: str, params: dict[str, Any]) -> _SdkSessionRuntime:
         runtime = self._sessions.get(session_id)
@@ -914,6 +962,19 @@ class ClaudeSdkAdapter:
         max_turns = _positive_int(params.get("maxTurns"))
         if max_turns is not None:
             kwargs["max_turns"] = max_turns
+        # MCP server configs come from a local file (mcp.json) via a provider so
+        # tests can inject in-memory configs. The provider is called every turn
+        # so hand-edits to mcp.json take effect on the next turn without
+        # restarting the connector. When the provider returns an empty dict
+        # (missing file, invalid JSON, no configured servers) we skip both keys
+        # so behavior is bit-identical to pre-MCP: zero regression is a hard
+        # acceptance criterion, and `strict_mcp_config=True` on an empty dict
+        # would disable the SDK's own default MCP discovery path — a change of
+        # semantics we don't want when the user hasn't opted in.
+        mcp_servers = self._load_mcp_servers()
+        if mcp_servers:
+            kwargs["mcp_servers"] = dict(mcp_servers)
+            kwargs["strict_mcp_config"] = True
         hook_matcher = _optional_attr(sdk, "HookMatcher", "types.HookMatcher")
         if hook_matcher is not None:
             async def _keep_permission_stream_open(_input_data: Any, _tool_use_id: Any = None, _context: Any = None) -> dict[str, bool]:
@@ -988,6 +1049,25 @@ class ClaudeSdkAdapter:
         except ModuleNotFoundError as exc:
             raise ClaudeSdkAdapterError("claude-agent-sdk is not installed") from exc
         return claude_agent_sdk
+
+    def _load_mcp_servers(self) -> dict[str, dict[str, Any]]:
+        # Resolve the MCP server dict for the next turn. Injected provider wins
+        # (tests use this); default falls back to the on-disk `mcp.json` loader.
+        # Any provider failure degrades to "no MCP" rather than failing the turn:
+        # a broken config file must never be able to knock the whole runtime out.
+        provider = self.mcp_config_provider
+        if provider is None:
+            try:
+                return load_mcp_servers()
+            except Exception:
+                logger.exception("loading mcp.json failed; falling back to no MCP servers")
+                return {}
+        try:
+            servers = provider()
+        except Exception:
+            logger.exception("mcp_config_provider raised; falling back to no MCP servers")
+            return {}
+        return dict(servers) if isinstance(servers, dict) else {}
 
     async def _materialize_runtime_content(
         self,

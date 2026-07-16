@@ -360,6 +360,19 @@ class BackendRpcClient:
             if not callable(handler):
                 return {"ok": False, "reason": "runtime does not support this switch"}
             return await handler(params)
+        if method == "mcp.status":
+            # `mcp.status` defaults to the claude runtime: MCP is a Claude-only
+            # capability today, and callers usually omit the field. Adapters that
+            # don't implement it fall back to the empty-status shape so the
+            # client can render "no MCP servers" without erroring.
+            adapter_params = params
+            if not isinstance(params, dict) or not params.get("runtime"):
+                adapter_params = {**(params or {}), "runtime": "claude"}
+            adapter = self._resolve_adapter(adapter_params)
+            handler = getattr(adapter, "get_mcp_status", None)
+            if not callable(handler):
+                return {"mcpServers": []}
+            return await handler(adapter_params)
         if method == "fs.prepareDownload":
             return await self.local_ops.prepare_download(params)
         if method == "fs.uploadPreparedDownload":

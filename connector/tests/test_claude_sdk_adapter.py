@@ -1686,3 +1686,192 @@ async def test_claude_sdk_adapter_surfaces_notification_hook_as_timeline_item():
         if method == "timeline.itemUpsert" and params["item"]["type"] == "turn.end"
     ]
     assert turn_end and turn_end[-1]["status"] == "done"
+
+
+# ---------------------------------------------------------------------------
+# MCP injection + status RPC
+# ---------------------------------------------------------------------------
+#
+# The design guarantees "no mcp.json = zero regression" (see design.md
+# "Compatibility & Rollback"). These tests exercise `_options_kwargs` via the
+# start_turn path — which is the only production caller — so any drift that
+# leaks `mcp_servers` / `strict_mcp_config` into the SDK options dict on the
+# default no-MCP path would show up here.
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_does_not_inject_mcp_when_provider_returns_empty():
+    """No mcp.json ⇒ options must be bit-identical to the pre-MCP shape.
+
+    Regression guard for design.md's zero-regression acceptance criterion:
+    an empty provider must not silently enable `strict_mcp_config`, which
+    would flip SDK semantics for users who never opted into MCP.
+    """
+    FakeClient.instances = []
+    calls: list[int] = []
+
+    def empty_provider() -> dict[str, dict[str, Any]]:
+        calls.append(1)
+        return {}
+
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk, mcp_config_provider=empty_provider)
+    await adapter.start_turn(
+        {"sessionId": "sess_mcp_empty", "cwd": "/repo", "content": "hi"}
+    )
+    await adapter._sessions["sess_mcp_empty"].active_task
+
+    client = FakeClient.instances[-1]
+    assert "mcp_servers" not in client.options.kwargs
+    assert "strict_mcp_config" not in client.options.kwargs
+    # Provider was called per-turn (design.md: "called on every turn so hand-edits
+    # to mcp.json take effect without a connector restart").
+    assert calls, "provider must be invoked on every turn"
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_injects_mcp_servers_and_strict_when_configured():
+    """Populated provider ⇒ SDK sees mcp_servers + strict_mcp_config=True.
+
+    The dict is passed through verbatim (design.md: "field names align with
+    SDK McpStdioServerConfig / McpHttpServerConfig / McpSSEServerConfig") so
+    any renaming or filtering by the adapter would break MCP silently.
+    """
+    FakeClient.instances = []
+    servers = {
+        "docs": {
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-example"],
+            "env": {"API_KEY": "x"},
+        },
+        "browser": {
+            "type": "http",
+            "url": "https://mcp.example.com/mcp",
+            "headers": {"Authorization": "Bearer x"},
+        },
+    }
+
+    def provider() -> dict[str, dict[str, Any]]:
+        return servers
+
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk, mcp_config_provider=provider)
+    await adapter.start_turn(
+        {"sessionId": "sess_mcp_full", "cwd": "/repo", "content": "hi"}
+    )
+    await adapter._sessions["sess_mcp_full"].active_task
+
+    client = FakeClient.instances[-1]
+    # Copy — not the same object — but with identical content. The adapter
+    # `dict(mcp_servers)` guards against provider mutation between turns.
+    assert client.options.kwargs["mcp_servers"] == servers
+    assert client.options.kwargs["mcp_servers"] is not servers
+    # strict_mcp_config=True is only set when we opt into MCP; otherwise the
+    # SDK's default discovery path stays enabled (design.md).
+    assert client.options.kwargs["strict_mcp_config"] is True
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_swallows_provider_failure_as_no_mcp():
+    """A raising provider ⇒ log + continue with no MCP.
+
+    A broken mcp.json must never be able to knock the runtime out —
+    see design.md "Loader …退回'无 MCP'而不是让 turn 起不来".
+    """
+    FakeClient.instances = []
+
+    def bad_provider() -> dict[str, dict[str, Any]]:
+        raise RuntimeError("mcp.json is broken")
+
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk, mcp_config_provider=bad_provider)
+    await adapter.start_turn(
+        {"sessionId": "sess_mcp_bad", "cwd": "/repo", "content": "hi"}
+    )
+    await adapter._sessions["sess_mcp_bad"].active_task
+
+    client = FakeClient.instances[-1]
+    assert "mcp_servers" not in client.options.kwargs
+    assert "strict_mcp_config" not in client.options.kwargs
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_mcp_status_returns_empty_when_session_unknown():
+    """`mcp.status` on a never-created session ⇒ empty list, no exception.
+
+    Clients call `mcp.status` opportunistically (they might race a session
+    creation or the SDK might not yet expose the RPC). An error here would
+    break the UI's status panel for a benign case.
+    """
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+    result = await adapter.get_mcp_status({"sessionId": "nope"})
+    assert result == {"mcpServers": []}
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_mcp_status_returns_empty_when_sdk_client_missing_method():
+    """Older SDKs without `get_mcp_status` ⇒ empty list, not an error."""
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+    runtime = adapter._runtime_for(
+        "sess_mcp_status_old", {"sessionId": "sess_mcp_status_old"}
+    )
+
+    class LegacyClient:
+        # No `get_mcp_status` method at all.
+        pass
+
+    runtime.client = LegacyClient()
+    result = await adapter.get_mcp_status({"sessionId": "sess_mcp_status_old"})
+    assert result == {"mcpServers": []}
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_mcp_status_forwards_sdk_response_verbatim():
+    """SDK response is passed through unmodified.
+
+    Per design.md ("return the SDK response verbatim, don't remap"), we
+    strip only non-dict outer payloads. The `mcpServers` array — including
+    every field the SDK surfaces — is handed to callers as-is so future
+    schema extensions don't require adapter changes.
+    """
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+    runtime = adapter._runtime_for(
+        "sess_mcp_status_ok", {"sessionId": "sess_mcp_status_ok"}
+    )
+    sdk_response = {
+        "mcpServers": [
+            {
+                "name": "docs",
+                "status": "connected",
+                "connectionStatus": {"kind": "connected"},
+                "tools": [{"name": "docs.get", "annotations": {}}],
+            }
+        ]
+    }
+
+    class LiveClient:
+        async def get_mcp_status(self) -> dict[str, Any]:
+            return sdk_response
+
+    runtime.client = LiveClient()
+    result = await adapter.get_mcp_status({"sessionId": "sess_mcp_status_ok"})
+    assert result == {"mcpServers": sdk_response["mcpServers"]}
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_mcp_status_swallows_sdk_exception():
+    """A failing `client.get_mcp_status()` ⇒ empty list, no traceback bubble.
+
+    Same rationale as the "provider raises" case: MCP status is best-effort
+    telemetry, never a load-bearing dependency.
+    """
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+    runtime = adapter._runtime_for(
+        "sess_mcp_status_fail", {"sessionId": "sess_mcp_status_fail"}
+    )
+
+    class ExplodingClient:
+        async def get_mcp_status(self) -> dict[str, Any]:
+            raise RuntimeError("mcp bridge crashed")
+
+    runtime.client = ExplodingClient()
+    result = await adapter.get_mcp_status({"sessionId": "sess_mcp_status_fail"})
+    assert result == {"mcpServers": []}
