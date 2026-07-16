@@ -476,7 +476,7 @@ export type RuntimeConfigOption = {
 export type RuntimeConfigField = {
   key: string;
   label: string;
-  type: "string" | "enum" | "boolean" | "object";
+  type: "string" | "enum" | "boolean" | "object" | "number";
   description?: string | null;
   options?: RuntimeConfigOption[] | null;
   runtimeOptionsSource?: string | null;
@@ -484,6 +484,8 @@ export type RuntimeConfigField = {
   allowSessionOverride: boolean;
   hidden: boolean;
   fields?: RuntimeConfigField[] | null;
+  min?: number | null;
+  max?: number | null;
 };
 
 export type RuntimeConfigSchema = {

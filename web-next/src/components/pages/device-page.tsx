@@ -254,6 +254,32 @@ function AgentConfigDialog({
                   </div>
                 )
               }
+              if (field.type === "number") {
+                return (
+                  <div key={field.key} className="flex flex-col gap-2">
+                    <Label htmlFor={`agent-${runtime}-${field.key}`}>{field.label}</Label>
+                    <Input
+                      id={`agent-${runtime}-${field.key}`}
+                      type="number"
+                      inputMode="numeric"
+                      min={field.min ?? undefined}
+                      max={field.max ?? undefined}
+                      value={typeof value === "number" ? value : ""}
+                      onChange={(event) => {
+                        const raw = event.currentTarget.value.trim()
+                        if (raw === "") {
+                          patch(field.key, null)
+                          return
+                        }
+                        const parsed = Number.parseInt(raw, 10)
+                        patch(field.key, Number.isNaN(parsed) ? null : parsed)
+                      }}
+                      placeholder={field.description ?? field.label}
+                    />
+                    {field.description ? <p className="text-xs text-muted-foreground">{field.description}</p> : null}
+                  </div>
+                )
+              }
               return (
                 <div key={field.key} className="flex flex-col gap-2">
                   <Label htmlFor={`agent-${runtime}-${field.key}`}>{field.label}</Label>
