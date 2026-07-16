@@ -656,6 +656,7 @@
       "contextGaugeTokens": "{used} / {max} tokens",
       "contextNearCompact": "接近自动压缩",
       "contextCompacted": "上下文已压缩",
+      "notification": "通知",
       "contextCompactedTokens": "{pre} → {post} tokens",
       "rateLimitWarning": "额度将满",
       "rateLimited": "已被限流",

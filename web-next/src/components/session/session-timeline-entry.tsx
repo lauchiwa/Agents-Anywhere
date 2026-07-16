@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronDown, CircleAlert, Clock, FilePenLine, Sparkles } from "lucide-react"
+import { Bell, ChevronDown, CircleAlert, Clock, FilePenLine, Sparkles } from "lucide-react"
 import dynamic from "next/dynamic"
 import { useTranslations } from "next-intl"
 
@@ -128,6 +128,7 @@ function SystemCard({ item }: { item: TimelineItem }) {
   const kind = textOf(item.content.kind) || "system"
   if (kind === "reasoning") return <ReasoningEntry item={item} />
   if (kind === "compact") return <CompactEntry item={item} />
+  if (kind === "notification") return <NotificationEntry item={item} />
   const text = textOf(item.content.text) || textOf(item.content.message) || textOf(item.content.rawText)
   const failed = item.status === "failed" || kind === "error"
   return (
@@ -136,6 +137,24 @@ function SystemCard({ item }: { item: TimelineItem }) {
       <div className="min-w-0">
         <div className="font-medium">{kind}</div>
         <div className="wrap-break-word">{text || item.status}</div>
+      </div>
+    </div>
+  )
+}
+
+function NotificationEntry({ item }: { item: TimelineItem }) {
+  // A CLI-initiated Notification hook (include_hook_events): the agent is
+  // asking for the user's attention (e.g. a permission prompt or an idle
+  // nudge). Render an amber attention banner distinct from the neutral system
+  // card, with the optional hook-supplied title above the message.
+  const title = textOf(item.content.title)
+  const message = textOf(item.content.message) || textOf(item.content.text)
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-amber-500/35 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+      <Bell className="mt-0.5 size-4 shrink-0" />
+      <div className="min-w-0">
+        {title ? <div className="font-medium">{title}</div> : null}
+        <div className="wrap-break-word">{message || item.status}</div>
       </div>
     </div>
   )

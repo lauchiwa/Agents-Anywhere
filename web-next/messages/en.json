@@ -656,6 +656,7 @@
       "contextUsageTokens": "{used} / {max} tokens",
       "contextNearCompact": "Near auto-compact",
       "contextCompacted": "Context compacted",
+      "notification": "Notification",
       "contextCompactedTokens": "{pre} → {post} tokens",
       "rateLimitWarning": "Quota almost full",
       "rateLimited": "Rate limited",
