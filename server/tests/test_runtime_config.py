@@ -643,3 +643,67 @@ def test_changing_claude_settings_does_not_interrupt_running_sessions(tmp_path):
     assert response.json()["settings"]["model"] == "claude-opus-4-7[1m]"
     assert response.json()["settings"]["effort"] == "xhigh"
     assert fake_rpc.requests == []
+
+
+def test_claude_schema_exposes_max_turns_number_field(tmp_path):
+    client = make_client(tmp_path)
+    headers = auth_headers(client)
+    resp = client.get("/agents/claude/config-schema", headers=headers)
+    assert resp.status_code == 200, resp.text
+    fields = {f["key"]: f for f in resp.json()["schema"]["fields"]}
+    assert "maxTurns" in fields
+    assert fields["maxTurns"]["type"] == "number"
+    assert fields["maxTurns"]["min"] == 1
+    assert fields["maxTurns"]["max"] == 200
+
+
+def test_patch_device_agent_settings_persists_max_turns(tmp_path):
+    client = make_client(tmp_path)
+    connector_id, _, _, headers = create_connector_and_session(client)
+    resp = client.patch(
+        f"/connectors/{connector_id}/agents/claude/settings",
+        headers=headers,
+        json={"settings": {"maxTurns": 25}},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["settings"]["maxTurns"] == 25
+
+
+def test_patch_device_agent_settings_rejects_max_turns_out_of_range(tmp_path):
+    client = make_client(tmp_path)
+    connector_id, _, _, headers = create_connector_and_session(client)
+    resp = client.patch(
+        f"/connectors/{connector_id}/agents/claude/settings",
+        headers=headers,
+        json={"settings": {"maxTurns": 500}},
+    )
+    assert resp.status_code == 422
+    assert "maxTurns" in resp.json()["detail"]
+
+
+def test_patch_device_agent_settings_rejects_non_integer_max_turns(tmp_path):
+    client = make_client(tmp_path)
+    connector_id, _, _, headers = create_connector_and_session(client)
+    resp = client.patch(
+        f"/connectors/{connector_id}/agents/claude/settings",
+        headers=headers,
+        json={"settings": {"maxTurns": True}},
+    )
+    assert resp.status_code == 422
+    assert "maxTurns" in resp.json()["detail"]
+
+
+def test_serialize_runtime_params_injects_max_turns():
+    from agent_server.core.runtime_config import serialize_runtime_params
+
+    params = serialize_runtime_params(
+        runtime="claude",
+        settings={"permissionMode": "acceptEdits", "maxTurns": 30},
+    )
+    assert params["maxTurns"] == 30
+    # None max_turns must not appear in the params (SDK default = no cap).
+    params_none = serialize_runtime_params(
+        runtime="claude",
+        settings={"permissionMode": "acceptEdits", "maxTurns": None},
+    )
+    assert "maxTurns" not in params_none

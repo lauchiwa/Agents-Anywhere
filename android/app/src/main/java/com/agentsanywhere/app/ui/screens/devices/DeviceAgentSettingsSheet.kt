@@ -204,7 +204,8 @@ private fun AgentSettingsBody(
     val permissionField = state.mobileAgentField("permissionMode")
     val modelField = state.mobileAgentField("model")
     val effortField = state.filteredEffortField()
-    val fieldsCount = listOfNotNull(permissionField, modelField, effortField).size
+    val maxTurnsFieldForCount = state.mobileAgentNumberField("maxTurns")
+    val fieldsCount = listOfNotNull(permissionField, modelField, effortField, maxTurnsFieldForCount).size
 
     if (fieldsCount == 0) {
         AgentSettingsMessage(stringResource(R.string.agent_settings_none), palette)
@@ -247,6 +248,20 @@ private fun AgentSettingsBody(
                     field = field,
                     selected = state.value(field.key, field),
                     savingValue = if (savingKey == field.key) savingValue else null,
+                    enabled = savingKey == null,
+                    palette = palette,
+                    onPatch = onPatch,
+                )
+            }
+            val maxTurnsField = state.mobileAgentNumberField("maxTurns")
+            if ((permissionField != null || modelField != null || effortField != null) && maxTurnsField != null) {
+                AgentSettingsDivider(palette.divider)
+            }
+            maxTurnsField?.let { field ->
+                AgentSettingsSectionLabel(field.label, palette)
+                NumberSettingRow(
+                    field = field,
+                    current = state.settings[field.key],
                     enabled = savingKey == null,
                     palette = palette,
                     onPatch = onPatch,
@@ -525,6 +540,40 @@ private fun CircleGlyph(color: Color) = Canvas(modifier = Modifier.size(10.dp)) 
         radius = size.minDimension * 0.38f,
         style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.2.dp.toPx()),
     )
+}
+
+@Composable
+private fun NumberSettingRow(
+    field: RuntimeConfigField,
+    current: Any?,
+    enabled: Boolean,
+    palette: AgentSettingsPalette,
+    onPatch: (String, Any?) -> Unit,
+) {
+    // maxTurns and friends: a bounded integer field. Empty clears the override
+    // (null -> no cap). We send an Int so the JSON body carries a number, which
+    // the server's number validator requires (a string "25" would be rejected).
+    val initial = when (current) {
+        is Int -> current.toString()
+        is Number -> current.toInt().toString()
+        else -> ""
+    }
+    var text by remember(field.key, initial) { mutableStateOf(initial) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { raw ->
+                val digits = raw.filter { it.isDigit() }.take(6)
+                text = digits
+                onPatch(field.key, if (digits.isEmpty()) null else digits.toInt())
+            },
+            enabled = enabled,
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            placeholder = { Text(field.description ?: field.label, color = palette.secondaryText) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
 }
 
 private fun RuntimeSettingsState.mobileAgentField(key: String): RuntimeConfigField? {

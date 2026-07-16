@@ -19,7 +19,7 @@ class RuntimeConfigOption(BaseModel):
 class RuntimeConfigField(BaseModel):
     key: str = Field(min_length=1)
     label: str = Field(min_length=1)
-    type: Literal["string", "enum", "boolean", "object"] = "string"
+    type: Literal["string", "enum", "boolean", "object", "number"] = "string"
     description: str | None = None
     options: list[RuntimeConfigOption] | None = None
     runtimeOptionsSource: str | None = None
@@ -27,6 +27,8 @@ class RuntimeConfigField(BaseModel):
     allowSessionOverride: bool = False
     hidden: bool = False
     fields: list["RuntimeConfigField"] | None = None
+    min: int | None = None
+    max: int | None = None
 
     @model_validator(mode="after")
     def _validate_shape(self) -> "RuntimeConfigField":
@@ -91,7 +93,7 @@ DEFAULT_RUNTIME_SETTINGS: dict[str, dict[str, Any]] = {
 DEFAULT_RUNTIME_CONFIG_SCHEMAS: dict[str, RuntimeConfigSchema] = {
     "claude": RuntimeConfigSchema(
         runtime="claude",
-        schemaVersion=4,
+        schemaVersion=5,
         fields=[
             RuntimeConfigField(
                 key="permissionMode",
@@ -134,6 +136,15 @@ DEFAULT_RUNTIME_CONFIG_SCHEMAS: dict[str, RuntimeConfigSchema] = {
                     RuntimeConfigOption(value="xhigh", label="Extra high"),
                     RuntimeConfigOption(value="max", label="Max"),
                 ],
+            ),
+            RuntimeConfigField(
+                key="maxTurns",
+                label="Max turns",
+                type="number",
+                description="Cap the number of agent turns per request (leave blank for no limit)",
+                allowSessionOverride=True,
+                min=1,
+                max=200,
             ),
         ],
     ),
@@ -509,6 +520,8 @@ def serialize_runtime_params(
             result["model"] = settings.get("model")
         if settings.get("effort") is not None:
             result["effort"] = settings.get("effort")
+        if settings.get("maxTurns") is not None:
+            result["maxTurns"] = settings.get("maxTurns")
         return result
 
     if runtime == "codex":
@@ -633,6 +646,16 @@ def _validate_field_value(key: str, value: Any, field: RuntimeConfigField) -> An
         allowed = {option.value for option in options}
         if allowed and value not in allowed:
             raise ValueError(f"{key} has unsupported value: {value}")
+        return value
+    if field.type == "number":
+        # bool is an int subclass; reject it so a stray True/False can't slip
+        # through as 1/0.
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{key} must be an integer")
+        if field.min is not None and value < field.min:
+            raise ValueError(f"{key} must be >= {field.min}")
+        if field.max is not None and value > field.max:
+            raise ValueError(f"{key} must be <= {field.max}")
         return value
     if field.type == "object":
         if not isinstance(value, dict):

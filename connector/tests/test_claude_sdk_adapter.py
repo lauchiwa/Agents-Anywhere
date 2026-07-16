@@ -625,6 +625,7 @@ async def test_claude_sdk_adapter_streams_timeline_and_updates_external_session(
             "permissionMode": "acceptEdits",
             "model": "claude-sonnet-4-6",
             "effort": "high",
+            "maxTurns": 25,
             "attachments": [
                 {
                     "fileId": "file_1",
@@ -653,6 +654,7 @@ async def test_claude_sdk_adapter_streams_timeline_and_updates_external_session(
     assert "can_use_tool" in client.options.kwargs
     assert "hooks" in client.options.kwargs
     assert client.options.kwargs["include_hook_events"] is True
+    assert client.options.kwargs["max_turns"] == 25
 
     timeline = [params["item"] for method, params in notifications if method == "timeline.itemUpsert"]
     assert [item["type"] for item in timeline] == [

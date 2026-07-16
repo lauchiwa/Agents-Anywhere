@@ -911,6 +911,9 @@ class ClaudeSdkAdapter:
             value = _optional_string(params.get(param_key))
             if value:
                 kwargs[option_key] = value
+        max_turns = _positive_int(params.get("maxTurns"))
+        if max_turns is not None:
+            kwargs["max_turns"] = max_turns
         hook_matcher = _optional_attr(sdk, "HookMatcher", "types.HookMatcher")
         if hook_matcher is not None:
             async def _keep_permission_stream_open(_input_data: Any, _tool_use_id: Any = None, _context: Any = None) -> dict[str, bool]:
@@ -2118,6 +2121,15 @@ def _required(params: dict[str, Any], key: str) -> str:
 
 def _optional_string(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _positive_int(value: Any) -> int | None:
+    # bool is an int subclass; reject it so a stray True/False never becomes 1/0.
+    # Only a strictly positive integer is a usable max_turns cap; anything else
+    # (0, negative, float, str) falls back to the SDK default (no cap).
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if value > 0 else None
 
 
 def _attachment_file_id(att: Any) -> str | None:
