@@ -108,3 +108,36 @@ ClaudeSdkAdapter.rename_session calls SDK to sync custom_title on disk. Connecto
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Archive bootstrap-guidelines spec task
+
+**Date**: 2026-07-17
+**Task**: Archive bootstrap-guidelines spec task
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+Verified all spec files (backend/frontend/connector) are populated with real codebase patterns. Marked bootstrap-guidelines complete and archived.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dd1215f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
