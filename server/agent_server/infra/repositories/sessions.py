@@ -650,6 +650,8 @@ class SessionRepositoryMixin:
             values["last_activity_at"] = last_activity_at
         if context_usage is not None:
             values["context_usage_json"] = _json_dumps(context_usage)
+        if rate_limit is not None:
+            values["rate_limit_json"] = _json_dumps(rate_limit)
         async with self._engine.begin() as conn:
             row = (
                 await conn.execute(

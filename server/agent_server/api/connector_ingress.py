@@ -716,6 +716,16 @@ def _context_usage_param(params: dict[str, Any]) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
+def _rate_limit_param(params: dict[str, Any]) -> dict[str, Any] | None:
+    value = params.get("rateLimit")
+    return value if isinstance(value, dict) else None
+
+
+def _permission_mode_param(params: dict[str, Any]) -> str | None:
+    value = params.get("permissionMode")
+    return value if isinstance(value, str) and value else None
+
+
 def _local_session_state(params: dict[str, Any]) -> str:
     value = params.get("localState") or params.get("local_state")
     if isinstance(value, str):
