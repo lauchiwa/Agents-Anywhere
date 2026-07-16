@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 1
+- **Total Sessions**: 2
 - **Last Active**: 2026-07-17
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~44 | Active |
+| `journal-1.md` | ~77 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 2 | 2026-07-17 | MCP client card rendering (web + Android) | `104adf7` | `fix/android-sse-hang` |
 | 1 | 2026-07-17 | MCP 外部 server 注入 + 一批 connector 能力任务收尾 | `a3b8def`, `dd67de6`, `54a59a7`, `f43c3ec`, `5a6a5d8` | `fix/android-sse-hang` |
 <!-- @@@/auto:session-history -->
 

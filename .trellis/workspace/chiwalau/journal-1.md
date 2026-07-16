@@ -42,3 +42,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: MCP client card rendering (web + Android)
+
+**Date**: 2026-07-17
+**Task**: MCP client card rendering (web + Android)
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+Web ToolDetailPanel: arguments/result/error as separate CodePanel sections for kind:mcp; error label in text-destructive; non-MCP paths unchanged. Android: MCP detail/body populated in controller; McpToolPreview composable added; reuses CommandPreviewSection.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `104adf7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
