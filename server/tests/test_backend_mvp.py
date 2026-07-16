@@ -4630,8 +4630,36 @@ def test_session_updated_permission_mode_persists_to_override(tmp_path):
     # of plan mode and reports the execute mode on session.updated. The server
     # must persist it to the session's runtime-settings override so later turns
     # run in execute mode instead of re-entering plan.
+    #
+    # `plan` is a claude-only permission mode, so this must run against a claude
+    # session — the shared helper builds a codex one (whose schema rejects
+    # `plan`). Passing externalSessionId lets us create the session without a
+    # live connector RPC (see SessionRunService.create_session).
     client = make_client(tmp_path)
-    _, access_token, session_id, headers = create_connector_and_session(client)
+    headers = auth_headers(client)
+    connector_response = client.post("/connectors", headers=headers, json={"name": "dev"})
+    assert connector_response.status_code == 200, connector_response.text
+    connector_id = connector_response.json()["connector"]["id"]
+    connector_token = connector_response.json()["connectorToken"]
+    auth_response = client.post(
+        "/connector/auth",
+        headers={"Authorization": f"Connector {connector_id}:{connector_token}"},
+    )
+    assert auth_response.status_code == 200, auth_response.text
+    access_token = auth_response.json()["accessToken"]
+    session_response = client.post(
+        "/sessions",
+        headers=headers,
+        json={
+            "connectorId": connector_id,
+            "runtime": "claude",
+            "externalSessionId": f"thr_{connector_id}_plan",
+            "title": "Plan mode demo",
+            "cwd": "/repo",
+        },
+    )
+    assert session_response.status_code == 200, session_response.text
+    session_id = session_response.json()["session"]["id"]
 
     # Start in plan mode via the override.
     patch = client.patch(

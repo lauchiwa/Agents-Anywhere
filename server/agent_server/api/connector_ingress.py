@@ -521,9 +521,9 @@ async def apply_connector_notification(
             if plan_exit_mode is not None:
                 override = await db.get_session_runtime_settings_override(session_id)
                 if override.get("permissionMode") != plan_exit_mode:
-                    await db.set_session_runtime_settings_override(
+                    await db.patch_session_runtime_settings(
                         session_id,
-                        {**override, "permissionMode": plan_exit_mode},
+                        {"permissionMode": plan_exit_mode},
                     )
             await db.refresh_session_status_from_timeline(session_id)
             return IngestEffect(session_id=session_id, session_changed=True)
