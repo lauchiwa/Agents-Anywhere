@@ -356,6 +356,31 @@ class ClaudeSdkAdapter:
             return {"mcpServers": servers if isinstance(servers, list) else []}
         return {"mcpServers": []}
 
+    async def rename_session(self, params: dict[str, Any]) -> dict[str, Any]:
+        external_session_id = _optional_string(params.get("externalSessionId"))
+        title = _optional_string(params.get("title"))
+        if not external_session_id or not title:
+            return {"ok": False, "reason": "externalSessionId and title required"}
+        cwd = _optional_string(params.get("cwd"))
+        sdk = self._load_sdk()
+        rename_fn = getattr(sdk, "rename_session", None)
+        if not callable(rename_fn):
+            return {"ok": False, "reason": "sdk does not support rename_session"}
+        try:
+            if cwd:
+                rename_fn(external_session_id, title, directory=cwd)
+            else:
+                rename_fn(external_session_id, title)
+        except Exception:
+            logger.debug(
+                "sdk rename_session failed external_session_id={} title={}",
+                external_session_id,
+                title,
+                exc_info=True,
+            )
+            return {"ok": False, "reason": "rename_session failed"}
+        return {"ok": True}
+
     def _runtime_for(self, session_id: str, params: dict[str, Any]) -> _SdkSessionRuntime:
         runtime = self._sessions.get(session_id)
         if runtime is None:

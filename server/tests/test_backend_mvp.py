@@ -5963,6 +5963,123 @@ def test_archive_all_forbidden_for_other_user(tmp_path):
     assert response.status_code == 404
 
 
+def test_session_rename_syncs_to_connector_when_online(tmp_path):
+    """PATCH /sessions/{id} with title calls manager.request("session.rename") when connector online."""
+    client = make_client(tmp_path)
+    headers = auth_headers(client)
+    connector_response = client.post("/connectors", headers=headers, json={"name": "dev"})
+    assert connector_response.status_code == 200
+    connector_id = connector_response.json()["connector"]["id"]
+
+    session_response = client.post(
+        "/sessions",
+        headers=headers,
+        json={
+            "connectorId": connector_id,
+            "runtime": "claude",
+            "externalSessionId": "ext_rename_online",
+            "title": "Original Title",
+            "cwd": "/repo",
+        },
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["session"]["id"]
+
+    class FakeRenameRpc:
+        def __init__(self) -> None:
+            self.requests: list[tuple[str, str, dict[str, Any]]] = []
+
+        def is_online(self, connector_id: str) -> bool:
+            return True
+
+        async def request(
+            self,
+            connector_id: str,
+            method: str,
+            params: dict[str, Any],
+            *,
+            timeout: float = 30,
+        ) -> Any:
+            self.requests.append((connector_id, method, params))
+            if method == "session.rename":
+                return {"ok": True}
+            return {}
+
+    fake_rpc = FakeRenameRpc()
+    client.app.state.rpc = fake_rpc
+
+    response = client.patch(
+        f"/sessions/{session_id}",
+        headers=headers,
+        json={"title": "New Name"},
+    )
+    assert response.status_code == 200
+    assert response.json()["session"]["title"] == "New Name"
+
+    rename_calls = [(cid, m, p) for cid, m, p in fake_rpc.requests if m == "session.rename"]
+    assert len(rename_calls) == 1
+    _, method, params = rename_calls[0]
+    assert method == "session.rename"
+    assert params["externalSessionId"] == "ext_rename_online"
+    assert params["title"] == "New Name"
+    assert params["sessionId"] == session_id
+
+
+def test_session_rename_skips_connector_when_offline(tmp_path):
+    """PATCH /sessions/{id} with title skips manager.request when connector offline; still returns 200."""
+    client = make_client(tmp_path)
+    headers = auth_headers(client)
+    connector_response = client.post("/connectors", headers=headers, json={"name": "dev"})
+    assert connector_response.status_code == 200
+    connector_id = connector_response.json()["connector"]["id"]
+
+    session_response = client.post(
+        "/sessions",
+        headers=headers,
+        json={
+            "connectorId": connector_id,
+            "runtime": "claude",
+            "externalSessionId": "ext_rename_offline",
+            "title": "Original Title",
+            "cwd": "/repo",
+        },
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["session"]["id"]
+
+    class FakeOfflineRpc:
+        def __init__(self) -> None:
+            self.requests: list[tuple[str, str, dict[str, Any]]] = []
+
+        def is_online(self, connector_id: str) -> bool:
+            return False
+
+        async def request(
+            self,
+            connector_id: str,
+            method: str,
+            params: dict[str, Any],
+            *,
+            timeout: float = 30,
+        ) -> Any:
+            self.requests.append((connector_id, method, params))
+            return {}
+
+    fake_rpc = FakeOfflineRpc()
+    client.app.state.rpc = fake_rpc
+
+    response = client.patch(
+        f"/sessions/{session_id}",
+        headers=headers,
+        json={"title": "Offline Rename"},
+    )
+    assert response.status_code == 200
+    assert response.json()["session"]["title"] == "Offline Rename"
+
+    rename_calls = [m for _, m, _ in fake_rpc.requests if m == "session.rename"]
+    assert len(rename_calls) == 0
+
+
 class FakeWebSocket:
     def __init__(self) -> None:
         self.sent: asyncio.Queue[dict[str, Any]] = asyncio.Queue()

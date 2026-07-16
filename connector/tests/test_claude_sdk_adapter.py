@@ -1875,3 +1875,110 @@ async def test_claude_sdk_adapter_mcp_status_swallows_sdk_exception():
     runtime.client = ExplodingClient()
     result = await adapter.get_mcp_status({"sessionId": "sess_mcp_status_fail"})
     assert result == {"mcpServers": []}
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_rename_session_calls_sdk():
+    """rename_session calls sdk.rename_session with the right args and returns ok:True."""
+    rename_calls: list[tuple[Any, ...]] = []
+
+    class SdkWithRename:
+        ClaudeAgentOptions = FakeSdk.ClaudeAgentOptions
+        ClaudeSDKClient = FakeSdk.ClaudeSDKClient
+        HookMatcher = FakeSdk.HookMatcher
+        PermissionResultAllow = FakeSdk.PermissionResultAllow
+        PermissionResultDeny = FakeSdk.PermissionResultDeny
+
+        @staticmethod
+        def rename_session(external_session_id: str, title: str, **kwargs: Any) -> None:
+            rename_calls.append((external_session_id, title, kwargs))
+
+    adapter = ClaudeSdkAdapter(sdk_module=SdkWithRename)
+    result = await adapter.rename_session(
+        {"externalSessionId": "ext123", "title": "New Title", "cwd": "/repo"}
+    )
+
+    assert result == {"ok": True}
+    assert len(rename_calls) == 1
+    assert rename_calls[0] == ("ext123", "New Title", {"directory": "/repo"})
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_rename_session_without_cwd():
+    """rename_session without cwd calls sdk.rename_session with only id and title."""
+    rename_calls: list[tuple[Any, ...]] = []
+
+    class SdkWithRename:
+        ClaudeAgentOptions = FakeSdk.ClaudeAgentOptions
+        ClaudeSDKClient = FakeSdk.ClaudeSDKClient
+        HookMatcher = FakeSdk.HookMatcher
+        PermissionResultAllow = FakeSdk.PermissionResultAllow
+        PermissionResultDeny = FakeSdk.PermissionResultDeny
+
+        @staticmethod
+        def rename_session(external_session_id: str, title: str, **kwargs: Any) -> None:
+            rename_calls.append((external_session_id, title, kwargs))
+
+    adapter = ClaudeSdkAdapter(sdk_module=SdkWithRename)
+    result = await adapter.rename_session(
+        {"externalSessionId": "ext456", "title": "Another Title"}
+    )
+
+    assert result == {"ok": True}
+    assert len(rename_calls) == 1
+    # No directory kwarg when cwd is absent
+    assert rename_calls[0] == ("ext456", "Another Title", {})
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_rename_session_missing_sdk_method():
+    """When sdk has no rename_session, return ok:False with a descriptive reason."""
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)  # FakeSdk has no rename_session
+    result = await adapter.rename_session(
+        {"externalSessionId": "ext789", "title": "Some Title"}
+    )
+
+    assert result["ok"] is False
+    assert "rename_session" in result.get("reason", "")
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_rename_session_missing_params():
+    """Missing externalSessionId or title ⇒ ok:False immediately."""
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+
+    # Missing title
+    result_no_title = await adapter.rename_session({"externalSessionId": "ext1"})
+    assert result_no_title["ok"] is False
+
+    # Missing externalSessionId
+    result_no_id = await adapter.rename_session({"title": "Some Title"})
+    assert result_no_id["ok"] is False
+
+    # Empty params
+    result_empty = await adapter.rename_session({})
+    assert result_empty["ok"] is False
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_rename_session_sdk_raises():
+    """When sdk.rename_session raises, return ok:False without propagating the exception."""
+
+    class SdkWithRaisingRename:
+        ClaudeAgentOptions = FakeSdk.ClaudeAgentOptions
+        ClaudeSDKClient = FakeSdk.ClaudeSDKClient
+        HookMatcher = FakeSdk.HookMatcher
+        PermissionResultAllow = FakeSdk.PermissionResultAllow
+        PermissionResultDeny = FakeSdk.PermissionResultDeny
+
+        @staticmethod
+        def rename_session(external_session_id: str, title: str, **kwargs: Any) -> None:
+            raise RuntimeError("disk write failed")
+
+    adapter = ClaudeSdkAdapter(sdk_module=SdkWithRaisingRename)
+    result = await adapter.rename_session(
+        {"externalSessionId": "ext_err", "title": "Bad Title"}
+    )
+
+    assert result["ok"] is False
+    assert result.get("reason")

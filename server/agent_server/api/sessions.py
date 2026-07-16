@@ -107,6 +107,29 @@ async def patch_session(
             session = await db.rename_session(session_id, payload.title, user_id=user_id)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        # Best-effort: sync new title to connector's SDK copy (custom_title on disk).
+        # Skipped when connector is offline or session has no external ID.
+        # DB is already updated so a failure here is non-fatal.
+        if (
+            session.externalSessionId
+            and session.connectorId
+            and manager.is_online(session.connectorId)
+        ):
+            try:
+                await manager.request(
+                    session.connectorId,
+                    "session.rename",
+                    {
+                        "sessionId": session_id,
+                        "externalSessionId": session.externalSessionId,
+                        "title": payload.title.strip(),
+                        "cwd": session.cwd,
+                        "runtime": session.runtime or "claude",
+                    },
+                    timeout=10,
+                )
+            except (ConnectorOfflineError, ConnectorRpcError):
+                pass
     if payload.pinned is not None:
         session = await db.set_session_pinned(session_id, payload.pinned, user_id=user_id)
     if payload.archived is not None:

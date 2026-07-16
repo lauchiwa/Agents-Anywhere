@@ -1376,3 +1376,65 @@ async def _exercise_mcp_status_missing_handler() -> None:
 
     assert result == {"mcpServers": []}
     assert codex.calls == []
+
+
+async def _exercise_session_rename_dispatch() -> None:
+    class RenameAdapter(FakeAdapter):
+        def __init__(self) -> None:
+            super().__init__()
+            self.rename_calls: list[dict[str, Any]] = []
+
+        async def rename_session(self, params: dict[str, Any]) -> dict[str, Any]:
+            self.rename_calls.append(params)
+            return {"ok": True}
+
+    codex = FakeAdapter()
+    claude = RenameAdapter()
+    client = BackendRpcClient(
+        ConnectorConfig(
+            server_url="http://127.0.0.1:8000",
+            connector_id="conn_1",
+            connector_token="token",
+            sync_existing_on_connect=False,
+        ),
+        adapters={"codex": codex, "claude": claude},
+    )
+
+    result = await client.dispatch(
+        "session.rename",
+        {"externalSessionId": "ext1", "title": "Renamed", "runtime": "claude"},
+    )
+
+    assert result == {"ok": True}
+    assert len(claude.rename_calls) == 1
+    assert claude.rename_calls[0]["externalSessionId"] == "ext1"
+    assert claude.rename_calls[0]["title"] == "Renamed"
+
+
+async def _exercise_session_rename_missing_handler() -> None:
+    codex = FakeAdapter()  # no rename_session method
+    client = BackendRpcClient(
+        ConnectorConfig(
+            server_url="http://127.0.0.1:8000",
+            connector_id="conn_1",
+            connector_token="token",
+            sync_existing_on_connect=False,
+        ),
+        adapters={"codex": codex},
+    )
+
+    result = await client.dispatch(
+        "session.rename",
+        {"externalSessionId": "ext1", "title": "T", "runtime": "codex"},
+    )
+
+    assert result["ok"] is False
+    assert "rename" in result.get("reason", "")
+
+
+def test_connector_runtime_dispatches_session_rename() -> None:
+    asyncio.run(_exercise_session_rename_dispatch())
+
+
+def test_connector_runtime_session_rename_missing_handler() -> None:
+    asyncio.run(_exercise_session_rename_missing_handler())

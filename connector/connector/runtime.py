@@ -343,6 +343,12 @@ class BackendRpcClient:
             result = await adapter.sync_session(params)
             await self._send_backend_notifications(result)
             return _strip_backend_notifications(result)
+        if method == "session.rename":
+            adapter = self._resolve_adapter(params)
+            handler = getattr(adapter, "rename_session", None)
+            if not callable(handler):
+                return {"ok": False, "reason": "runtime does not support rename"}
+            return await handler(params)
         if method == "turn.start":
             return await self._resolve_adapter(params).start_turn(
                 {**params, "connectorId": self.config.connector_id}
