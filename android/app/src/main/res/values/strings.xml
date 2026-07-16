@@ -344,6 +344,9 @@
     <string name="session_output">Output</string>
     <string name="session_no_output">No output</string>
     <string name="session_no_preview">No preview</string>
+    <string name="session_mcp_arguments">arguments</string>
+    <string name="session_mcp_result">result</string>
+    <string name="session_mcp_error">error</string>
     <string name="session_tool_summary_commands">Ran %1$d commands</string>
     <string name="session_tool_summary_changed_files">Changed %1$d files</string>
     <string name="session_tool_summary_created_files">Created %1$d files</string>

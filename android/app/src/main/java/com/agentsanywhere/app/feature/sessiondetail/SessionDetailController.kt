@@ -654,12 +654,25 @@ class SessionDetailController(
             "command" -> listOf(toCommandMessage())
             "file_change" -> toFileChangeMessages()
             "web_search" -> listOf(toToolCallMessage(title = "Searched web", subtitle = content.text("query").orEmpty()))
-            "mcp" -> listOf(
-                toToolCallMessage(
-                    title = content.text("tool") ?: "tool",
-                    subtitle = content.text("server") ?: "mcp",
+            "mcp" -> {
+                val argsJson = content.optJSONObject("arguments")?.toString(2) ?: ""
+                val outputText = content.text("outputText") ?: content.text("result") ?: ""
+                val errorText = content.text("error") ?: ""
+                val isError = content.optBoolean("isError", false) || errorText.isNotBlank()
+                val body = when {
+                    isError && errorText.isNotBlank() -> "Error: $errorText"
+                    outputText.isNotBlank() -> outputText
+                    else -> ""
+                }
+                listOf(
+                    toToolCallMessage(
+                        title = content.text("tool") ?: "tool",
+                        subtitle = content.text("server") ?: "mcp",
+                        detail = argsJson,
+                        body = body,
+                    )
                 )
-            )
+            }
             "schedule_wakeup" -> {
                 val delay = content.text("delaySeconds")?.let { formatDelaySeconds(it) }
                 val title = if (delay != null) "Scheduled wake-up in $delay" else "Scheduled wake-up"
@@ -854,7 +867,12 @@ class SessionDetailController(
         )
     }
 
-    private fun RemoteTimelineItem.toToolCallMessage(title: String, subtitle: String): TimelineMessage {
+    private fun RemoteTimelineItem.toToolCallMessage(
+        title: String,
+        subtitle: String,
+        detail: String = "",
+        body: String = "",
+    ): TimelineMessage {
         val name = title.ifBlank { "tool" }
         return TimelineMessage(
             id = id,
@@ -866,6 +884,8 @@ class SessionDetailController(
             kind = TimelineMessageKind.ToolCall,
             title = name,
             subtitle = subtitle,
+            detail = detail,
+            body = body,
             badge = status.statusLabel(),
             orderSeq = orderSeq,
             updatedSeq = updatedSeq,

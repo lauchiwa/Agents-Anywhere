@@ -1440,6 +1440,17 @@ private fun TimelineMessage.toolSummaryTarget(): String {
 
 @Composable
 private fun ToolCallPreview(message: TimelineMessage, darkMode: Boolean) {
+    // When detail is populated it means this is an MCP tool call with structured
+    // arguments/result — render with McpToolPreview for clear separation.
+    if (message.detail.isNotBlank()) {
+        McpToolPreview(
+            arguments = message.detail,
+            output = message.body,
+            isError = message.body.startsWith("Error:"),
+            darkMode = darkMode,
+        )
+        return
+    }
     val details = listOf(
         message.subtitle,
         message.detail,
@@ -1452,6 +1463,29 @@ private fun ToolCallPreview(message: TimelineMessage, darkMode: Boolean) {
         languageHint = null,
         darkMode = darkMode,
     )
+}
+
+@Composable
+private fun McpToolPreview(arguments: String, output: String, isError: Boolean, darkMode: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (arguments.isNotBlank()) {
+            CommandPreviewSection(
+                label = stringResource(R.string.session_mcp_arguments),
+                text = arguments,
+                languageHint = "json",
+                darkMode = darkMode,
+            )
+        }
+        if (output.isNotBlank()) {
+            val cleanOutput = if (isError) output.removePrefix("Error: ") else output
+            CommandPreviewSection(
+                label = if (isError) stringResource(R.string.session_mcp_error) else stringResource(R.string.session_mcp_result),
+                text = cleanOutput,
+                languageHint = null,
+                darkMode = darkMode,
+            )
+        }
+    }
 }
 
 private val TimelineMessage.hasToolCallDetail: Boolean

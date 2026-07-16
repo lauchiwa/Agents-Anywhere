@@ -54,7 +54,13 @@ export function ToolCard({
   const tSession = useTranslations("dashboard.session")
   const kind = timelineToolKind(item)
   const command = commandText(item.content.command)
-  const output = textOf(item.content.outputPreview) || textOf(item.content.outputText) || textOf(item.content.error)
+  const isMcp = kind === "mcp"
+  const mcpArguments = isMcp ? (item.content.arguments ?? null) : null
+  const mcpErrorText = isMcp ? (textOf(item.content.error) ?? null) : null
+  const output =
+    textOf(item.content.outputPreview) ||
+    textOf(item.content.outputText) ||
+    (!isMcp ? textOf(item.content.error) : null)
   const changes = recordsOf(item.content.changes)
   const title = timelineToolTitle(item, tSession)
   const defaultOpen = Boolean(approval)
@@ -79,6 +85,8 @@ export function ToolCard({
             output={output}
             changes={changes}
             fallback={item.content}
+            mcpArguments={mcpArguments}
+            mcpError={mcpErrorText}
           />
           {approval ? (
             <div className="mt-2">
@@ -167,6 +175,8 @@ export function ToolDetailPanel({
   output,
   changes,
   fallback,
+  mcpArguments,
+  mcpError,
 }: {
   token: string
   session: SessionView
@@ -174,9 +184,12 @@ export function ToolDetailPanel({
   output: string | null
   changes: Array<Record<string, unknown>>
   fallback: unknown
+  mcpArguments?: unknown
+  mcpError?: string | null
 }) {
-  const hasContent = Boolean(command || output || changes.length > 0)
+  const hasContent = Boolean(command || output || changes.length > 0 || mcpArguments != null || mcpError != null)
   if (!hasContent) return <JsonBlock value={fallback} />
+  const outputLabel = mcpArguments != null ? "result" : "output"
   return (
     <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-border bg-background">
       {command ? <CodePanel label="command" code={command} language="bash" flush /> : null}
@@ -192,17 +205,27 @@ export function ToolDetailPanel({
           ))}
         </div>
       ) : null}
-      {output ? (
+      {mcpArguments != null ? (
         <div className={cn((command || changes.length > 0) && "border-t")}>
-          <CodePanel label="output" code={output} language="text" flush />
+          <CodePanel label="arguments" code={JSON.stringify(mcpArguments, null, 2)} language="json" flush />
+        </div>
+      ) : null}
+      {output ? (
+        <div className={cn((command || changes.length > 0 || mcpArguments != null) && "border-t")}>
+          <CodePanel label={outputLabel} code={output} language="text" flush />
+        </div>
+      ) : null}
+      {mcpError ? (
+        <div className={cn((command || changes.length > 0 || mcpArguments != null || output) && "border-t")}>
+          <CodePanel label="error" code={mcpError} language="text" flush labelClassName="text-destructive" />
         </div>
       ) : null}
     </div>
   )
 }
 
-export function CodePanel({ label, code, language, flush }: { label: string; code: string; language: string; flush?: boolean }) {
-  return <CodePanelFrame label={label} code={code} flush={flush}>
+export function CodePanel({ label, code, language, flush, labelClassName }: { label: string; code: string; language: string; flush?: boolean; labelClassName?: string }) {
+  return <CodePanelFrame label={label} code={code} flush={flush} labelClassName={labelClassName}>
     {language === "diff" ? (
       <DiffPanel code={code} maxHeight={codePanelHeight(code)} />
     ) : (
@@ -216,19 +239,21 @@ function CodePanelFrame({
   code,
   flush,
   action,
+  labelClassName,
   children,
 }: {
   label: string
   code: string
   flush?: boolean
   action?: React.ReactNode
+  labelClassName?: string
   children: React.ReactNode
 }) {
   const [copied, setCopied] = React.useState(false)
   return (
     <div className={cn("min-w-0 max-w-full overflow-hidden bg-background", !flush && "rounded-xl border border-border")}>
       <div className="flex h-9 items-center justify-between border-b bg-muted/25 px-3">
-        <span className="code-mono text-xs text-muted-foreground">{label}</span>
+        <span className={cn("code-mono text-xs text-muted-foreground", labelClassName)}>{label}</span>
         <div className="flex items-center gap-1">
           {action}
           <button
