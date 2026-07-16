@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -42,7 +43,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agentsanywhere.app.R
@@ -94,11 +97,11 @@ internal fun DeviceAgentSettingsSheet(
             }
     }
 
-    fun patch(key: String, value: String?) {
+    fun patch(key: String, value: Any?) {
         if (savingKey != null) return
         val currentSchema = state.schema
         savingKey = key
-        savingValue = value
+        savingValue = value as? String
         saveError = null
         state = state.copy(savingKey = key)
         scope.launch {
@@ -199,7 +202,7 @@ private fun AgentSettingsBody(
     savingValue: String?,
     saveError: String?,
     modifier: Modifier = Modifier,
-    onPatch: (String, String?) -> Unit,
+    onPatch: (String, Any?) -> Unit,
 ) {
     val permissionField = state.mobileAgentField("permissionMode")
     val modelField = state.mobileAgentField("model")
@@ -279,7 +282,7 @@ private fun AgentSettingsOptionList(
     savingKey: String?,
     savingValue: String?,
     palette: AgentSettingsPalette,
-    onPatch: (String, String?) -> Unit,
+    onPatch: (String, Any?) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         field.options.forEach { option ->
@@ -361,7 +364,7 @@ private fun AgentSettingsSegments(
     savingValue: String?,
     enabled: Boolean,
     palette: AgentSettingsPalette,
-    onPatch: (String, String?) -> Unit,
+    onPatch: (String, Any?) -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -580,6 +583,12 @@ private fun RuntimeSettingsState.mobileAgentField(key: String): RuntimeConfigFie
     return schema?.fields
         ?.filter { !it.hidden && it.type == "enum" && visible(it) }
         ?.firstOrNull { it.key == key && it.options.isNotEmpty() }
+}
+
+private fun RuntimeSettingsState.mobileAgentNumberField(key: String): RuntimeConfigField? {
+    return schema?.fields
+        ?.filter { !it.hidden && it.type == "number" && visible(it) }
+        ?.firstOrNull { it.key == key }
 }
 
 private fun RuntimeSettingsState.filteredEffortField(): RuntimeConfigField? {
