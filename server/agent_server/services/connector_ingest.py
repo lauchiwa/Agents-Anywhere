@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from loguru import logger
+
 from agent_server.infra.connector_rpc import ConnectorRpcManager
 from agent_server.core.models import ConnectorIngestRequest, ConnectorIngestResponse
 from agent_server.services.runtime_activation import send_active_runtimes
@@ -43,17 +45,26 @@ class ConnectorIngestService:
         for notification in payload.notifications:
             if notification.method == "connector.capabilitiesUpdated":
                 saw_capabilities = True
-            effects.append(
-                await apply_connector_notification(
+            try:
+                effects.append(
+                    await apply_connector_notification(
+                        connector_id,
+                        notification.method,
+                        notification.params,
+                        self._store,
+                        self._tasks,
+                        self._terminal_broker,
+                        self._terminal_stream_hub,
+                    )
+                )
+            except Exception as e:
+                logger.warning(
+                    "connector {}: dropping bad notification {}: {}",
                     connector_id,
                     notification.method,
-                    notification.params,
-                    self._store,
-                    self._tasks,
-                    self._terminal_broker,
-                    self._terminal_stream_hub,
+                    e,
                 )
-            )
+                continue
         await _publish_effects(self._store, self._timeline_broker, effects)
         if saw_capabilities:
             await publish_dashboard_changed(

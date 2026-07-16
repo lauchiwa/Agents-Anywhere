@@ -278,7 +278,11 @@ async def connector_ws(
             message = await websocket.receive_json()
             if not manager.touch(connector_id, connection):
                 break
-            await _handle_connector_message(connector_id, message, manager, ingest_service)
+            try:
+                await _handle_connector_message(connector_id, message, manager, ingest_service)
+            except Exception as e:
+                logger.warning("connector {}: bad frame, skipping: {}", connector_id, e)
+                continue
     except WebSocketDisconnect:
         logger.info("connector disconnected: {}", connector_id)
     finally:

@@ -483,6 +483,13 @@ class ClaudeSdkAdapter:
                 runtime.current_content = None
                 runtime.current_attachments = None
                 runtime.emitted_user_message = False
+            # Resolve any still-pending approval futures before dropping them, or
+            # a _can_use_tool coroutine still awaiting one (e.g. the SDK ended the
+            # stream while the future was outstanding) would hang forever. Match
+            # interrupt_turn's "cancelled" resolution.
+            for _pending in runtime.pending_approvals.values():
+                if not _pending.future.done():
+                    _pending.future.set_result("cancelled")
             runtime.pending_approvals.clear()
             self._prepare_history_adapter()
             await self._emit_session_update(runtime, status="idle")
