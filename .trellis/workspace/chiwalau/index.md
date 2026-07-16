@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
+- **Total Sessions**: 5
 - **Last Active**: 2026-07-17
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~143 | Active |
+| `journal-1.md` | ~177 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-07-17 | 全项目功能审查与 P1 修复 | `15e6730`, `e2db6e0` | `fix/android-sse-hang` |
 | 4 | 2026-07-17 | Archive bootstrap-guidelines spec task | `dd1215f` | `fix/android-sse-hang` |
 | 3 | 2026-07-17 | Session rename RPC (connector + server) | `08cf1f1` | `fix/android-sse-hang` |
 | 2 | 2026-07-17 | MCP client card rendering (web + Android) | `104adf7` | `fix/android-sse-hang` |

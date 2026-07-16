@@ -141,3 +141,37 @@ Verified all spec files (backend/frontend/connector) are populated with real cod
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: 全项目功能审查与 P1 修复
+
+**Date**: 2026-07-17
+**Task**: 全项目功能审查与 P1 修复
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+三路并行审查（server/connector/web+Android）。发现并修复 8 个 bug：2个P0 connector（SDK客户端泄漏、approval ID碰撞）、3个P0/P1 i18n（zh contextUsage键漂移、planMode键缺失、Android MCP中文标签）、3个P1韧性（WebSocket坏帧杀连接、批量ingest首败中断、turn结束pending future未resolve）。确认server MCP从未实现（内存记录有误）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `15e6730` | (see git log) |
+| `e2db6e0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
