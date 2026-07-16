@@ -1183,6 +1183,46 @@ async def test_claude_sdk_adapter_approval_bridge_resolves_to_sdk_allow():
 
 
 @pytest.mark.anyio
+async def test_claude_sdk_adapter_identical_concurrent_approvals_get_distinct_ids():
+    # Two identical tool calls (same tool_name + input) in one turn hash to the
+    # same base approval id. Each must still register its own resolvable pending
+    # entry; the second must not overwrite and orphan the first's future.
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=FakeSdk)
+    runtime = adapter._runtime_for(
+        "sess_dup",
+        {"sessionId": "sess_dup", "externalSessionId": "claude_session_dup"},
+    )
+    runtime.active_turn_id = "turn_dup"
+    ctx = {"session_id": "claude_session_dup"}
+
+    first_task = asyncio.create_task(adapter._can_use_tool("Bash", {"command": "ls"}, ctx))
+    await asyncio.sleep(0)
+    second_task = asyncio.create_task(adapter._can_use_tool("Bash", {"command": "ls"}, ctx))
+    await asyncio.sleep(0)
+
+    approvals = [p for m, p in notifications if m == "approval.requested"]
+    assert len(approvals) == 2
+    ids = {p["id"] for p in approvals}
+    assert len(ids) == 2  # distinct ids despite identical tool_name + input
+    assert len(runtime.pending_approvals) == 2  # neither future was orphaned
+
+    for approval in approvals:
+        await adapter.resolve_approval(
+            {"sessionId": "sess_dup", "approvalId": approval["id"], "status": "approved"}
+        )
+
+    first = await first_task
+    second = await second_task
+    assert isinstance(first, FakeAllow)
+    assert isinstance(second, FakeAllow)
+
+
+@pytest.mark.anyio
 async def test_claude_sdk_adapter_approved_for_session_auto_allows_identical_calls():
     notifications: list[tuple[str, dict[str, Any]]] = []
 

@@ -652,8 +652,8 @@
       "subagentTokens": "{tokens} tokens",
       "subagentToolUses": "{count} 次工具调用",
       "subagentDuration": "{seconds} 秒",
-      "contextGauge": "上下文 {percentage}%",
-      "contextGaugeTokens": "{used} / {max} tokens",
+      "contextUsage": "上下文 {percentage}%",
+      "contextUsageTokens": "{used} / {max} tokens",
       "contextNearCompact": "接近自动压缩",
       "contextCompacted": "上下文已压缩",
       "notification": "通知",
@@ -661,7 +661,8 @@
       "rateLimitWarning": "额度将满",
       "rateLimited": "已被限流",
       "rateLimitResets": "{time} 重置",
-      "rateLimitUtilization": "已用 {percentage}%"
+      "rateLimitUtilization": "已用 {percentage}%",
+      "planMode": "规划模式"
     },
     "sessionStatus": {
       "error": "错误",

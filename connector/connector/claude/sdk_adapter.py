@@ -409,7 +409,15 @@ class ClaudeSdkAdapter:
             runtime.stderr_lines.clear()
             await self._emit_item(runtime.session_id, _turn_start_item(runtime, turn_id))
             client = self._client(runtime, params)
+            # The prior turn's client is kept alive between turns so set_model /
+            # set_permission_mode / get_mcp_status can reach a live client. When a
+            # new turn supersedes it, tear the old one down first so its CLI
+            # subprocess/transport isn't orphaned (construction above spawns no
+            # process; connect() below does, so this keeps at most one live).
+            previous_client = runtime.client
             runtime.client = client
+            if previous_client is not None and previous_client is not client:
+                await _disconnect_client(previous_client)
             await _maybe_await(getattr(client, "connect", None))
             runtime_content = await self._materialize_runtime_content(
                 content=content,
@@ -1022,6 +1030,18 @@ class ClaudeSdkAdapter:
         if rule_key in runtime.session_approved_rules and not runtime.interrupted:
             return _permission_allow(sdk, input_data)
         approval_id = _approval_id(runtime.session_id, runtime.active_turn_id, tool_name, input_data)
+        # Two identical tool calls in one turn (same tool_name + input) hash to
+        # the same id. Without disambiguation the second registration would
+        # overwrite the first's pending future, orphaning it: the first
+        # _can_use_tool would await forever (interrupt_turn can't rescue a future
+        # that's no longer in the dict). Suffix on collision so each concurrent
+        # prompt keeps its own resolvable id; the common no-collision path keeps
+        # the deterministic id unchanged.
+        if approval_id in runtime.pending_approvals:
+            suffix = 2
+            while f"{approval_id}_{suffix}" in runtime.pending_approvals:
+                suffix += 1
+            approval_id = f"{approval_id}_{suffix}"
         loop = asyncio.get_running_loop()
         future: asyncio.Future[str] = loop.create_future()
         runtime.pending_approvals[approval_id] = _PendingSdkApproval(
@@ -1276,6 +1296,19 @@ async def _maybe_await(method: Any) -> None:
     result = method()
     if hasattr(result, "__await__"):
         await result
+
+
+async def _disconnect_client(client: Any) -> None:
+    # Best-effort teardown of a superseded SDK client. Try disconnect() then
+    # close(); a failure here must never fail the new turn, so swallow it.
+    for method_name in ("disconnect", "close"):
+        method = getattr(client, method_name, None)
+        if callable(method):
+            try:
+                await _maybe_await(method)
+            except Exception:
+                logger.debug("claude sdk client {} failed", method_name, exc_info=True)
+            return
 
 
 def _sdk_message_to_raw(
