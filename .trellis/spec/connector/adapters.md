@@ -40,3 +40,21 @@ capability 发现（`capabilities.py`）和适配器是分离的：发现只负�
 - 扫描（`capabilities.scanRuntime`）只做发现和 rewire，**不推送 session**。session 同步是后端在提交用户意图后单独发的 `capabilities.forceResyncRuntime`。顺序颠倒会导致 session 在运行时仍处于「用户已禁用」状态时到达 ingest 而被过滤掉（`_scan_runtime` 的注释详述了这个坑）。
 
 参考文件：`connector/runtime.py` 的 `_scan_runtime`、`_rewire_codex`、`_rewire_claude`；`connector/capabilities.py`。
+
+## ClaudeSdkAdapter 的可注入 Provider 模式
+
+`ClaudeSdkAdapter.__init__` 接受可选的 provider callable，用于把外部依赖（如 MCP 配置加载）解耦出 `_options_kwargs`，方便测试时注入 fake。
+
+```python
+ClaudeSdkAdapter(
+    ...,
+    mcp_config_provider: Callable[[], dict[str, Any]] | None = None,
+)
+```
+
+- 缺省 provider = `lambda: McpConfig.load().servers`，每次 turn 重新读文件（手动编辑 `mcp.json` 后无需重启）。
+- 测试里传入 `mcp_config_provider=lambda: {"docs": {...}}` 直接注入内存配置，不碰文件系统。
+
+扩展其他需要在每 turn 注入的本地配置时，优先用同样的 provider 模式，而不是在 `_options_kwargs` 里直接 import 和调用 IO。
+
+参考文件：`connector/connector/claude/mcp_config.py`、`connector/connector/claude/sdk_adapter.py:ClaudeSdkAdapter.__init__`。

@@ -55,3 +55,59 @@
 - WebSocket URL 由 `_ws_url` 从 server_url 推导（https→wss，http→ws）。
 
 参考文件：`connector/runtime.py` 的 `ConnectorConfig`、`_new_http_client`、`_is_loopback_url`、`_ws_url`。
+
+## MCP 外部 server 配置（本地文件，不走服务端下发）
+
+### 配置文件契约
+
+MCP 配置独立于 `connector.json`，存放在同目录的 `mcp.json`（默认 `~/.agent-server/mcp.json`，可用 `AGENT_CONNECTOR_MCP_CONFIG` 覆盖），权限 0600 由用户手动编辑。
+
+```json
+{
+  "servers": {
+    "<name>": {
+      "type": "stdio",          // stdio | http | sse，缺省 stdio
+      "command": "...",         // stdio 必填
+      "args": ["..."],          // stdio 可选
+      "env": {"KEY": "val"}    // stdio 可选，敏感字段不入日志
+    },
+    "<name2>": {
+      "type": "http",
+      "url": "https://...",
+      "headers": {"Authorization": "Bearer ..."}  // 敏感字段不入日志
+    }
+  }
+}
+```
+
+字段命名与 SDK 类型完全对齐：`McpStdioServerConfig` / `McpHttpServerConfig` / `McpSSEServerConfig`（`claude_agent_sdk/types.py`）。
+
+### 信任边界（关键规则）
+
+**MCP server 配置只能来自连接器本地文件，服务端永远不下发 MCP 配置。**
+
+理由：stdio type 配置等价于"在用户设备上跑这条 shell 命令 + env"，信任边界必须落在执行侧（连接器=用户设备）。服务端若能下发 stdio 命令，一旦服务端被撑破，所有连接器同时 RCE。
+
+- 连接器注入 `strict_mcp_config=True` 配合本地配置，防止 CLI 从系统级 CLAUDE.md 等渠道读取到未声明的 server。
+- 未来如需中心化编排，走「本地 allowlist + 服务端只能 enable/disable 已白名单 server」的混合模式，不是直接下发 server 定义。
+
+### 日志脱敏规则
+
+`env` 值、`headers` 值、命令参数（args）**不得出现在任何日志调用**。只记录 server name、type 和连接状态。`McpConfig.load` 加载失败时只打 warning，不含配置内容。
+
+### mcp.status RPC
+
+```
+method: "mcp.status"
+params: {} 或 {"runtime": "claude"}
+```
+
+- 无 `runtime` 字段时默认路由到 claude adapter（MCP 是 Claude only）。
+- adapter 上的 `get_mcp_status()` 调用活跃 session 的 `ClaudeSDKClient.get_mcp_status()`，返回 `{"mcpServers": [McpServerStatus, ...]}`（SDK 原样透传，不做字段重命名）。
+- adapter 未实现该方法（如 codex）或无活跃 session：返回 `{"mcpServers": []}` 而不是报错。
+
+### 加载失败行为
+
+文件不存在、JSON 错误、顶层 `servers` 不是 dict：均静默返回空 config（`{}`），turn 照常启动，`mcp_servers` / `strict_mcp_config` 不塞进 `ClaudeAgentOptions`。这是零回归的保证。
+
+参考文件：`connector/connector/claude/mcp_config.py`（`McpConfig`）、`sdk_adapter.py:_options_kwargs`、`runtime.py:dispatch` 的 `mcp.status` 分支。
