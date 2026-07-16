@@ -465,6 +465,42 @@ class RateLimitClearedClient(FakeClient):
         yield FakeResultMessage(session_id="claude_session_rl_clear")
 
 
+class NotificationHookClient(FakeClient):
+    """A Notification hook event (via include_hook_events) plus an unrelated
+    PreToolUse hook event that must be swallowed. Only the Notification should
+    reach the timeline, and only on the hook_response phase (not hook_started)."""
+
+    async def receive_response(self):
+        # hook_started for the Notification: must NOT produce an item (we act on
+        # the completed response only).
+        yield FakeSystemMessage(
+            subtype="hook_started",
+            data={"hook_event_name": "Notification", "input": {"message": "Needs your attention"}},
+        )
+        # An unrelated hook event that must be swallowed, never surfaced.
+        yield FakeSystemMessage(
+            subtype="hook_response",
+            data={"hook_event_name": "PreToolUse", "input": {"tool_name": "Bash"}},
+        )
+        # The Notification hook_response: this is the one that surfaces.
+        yield FakeSystemMessage(
+            subtype="hook_response",
+            data={
+                "hook_event_name": "Notification",
+                "input": {
+                    "message": "Needs your attention",
+                    "title": "Approval",
+                    "notification_type": "permission",
+                },
+            },
+        )
+        yield FakeAssistantMessage(
+            message_id="msg_hook_assistant",
+            content=[FakeTextBlock(text="done")],
+        )
+        yield FakeResultMessage(session_id="claude_session_hook")
+
+
 class FakeSdk:
     ClaudeAgentOptions = FakeOptions
     ClaudeSDKClient = FakeClient
@@ -616,6 +652,7 @@ async def test_claude_sdk_adapter_streams_timeline_and_updates_external_session(
     assert client.options.kwargs["include_partial_messages"] is True
     assert "can_use_tool" in client.options.kwargs
     assert "hooks" in client.options.kwargs
+    assert client.options.kwargs["include_hook_events"] is True
 
     timeline = [params["item"] for method, params in notifications if method == "timeline.itemUpsert"]
     assert [item["type"] for item in timeline] == [
@@ -1602,3 +1639,48 @@ async def test_claude_sdk_adapter_clears_rate_limit_once_throttling_lifts():
     # But the "rejected" state WAS surfaced at least once before it cleared.
     saw_rejected = any(u["rateLimit"].get("status") == "rejected" for u in updates)
     assert saw_rejected
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_surfaces_notification_hook_as_timeline_item():
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    class NotificationSdk(FakeSdk):
+        ClaudeSDKClient = NotificationHookClient
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=NotificationSdk)
+    await adapter.start_turn(
+        {
+            "sessionId": "sess_notif",
+            "cwd": "/repo",
+            "externalSessionId": "claude_session_notif",
+            "content": "hi",
+        }
+    )
+    await adapter._sessions["sess_notif"].active_task
+
+    # Only the Notification hook_response surfaces a timeline item; the
+    # hook_started phase and the non-Notification hook are swallowed.
+    notif_items = [
+        params["item"]
+        for method, params in notifications
+        if method == "timeline.itemUpsert"
+        and params["item"]["type"] == "system"
+        and params["item"]["content"].get("kind") == "notification"
+    ]
+    assert len(notif_items) == 1
+    item = notif_items[0]
+    assert item["content"]["message"] == "Needs your attention"
+    assert item["content"]["title"] == "Approval"
+    assert item["role"] == "system"
+
+    # The turn still finishes normally.
+    turn_end = [
+        params["item"]
+        for method, params in notifications
+        if method == "timeline.itemUpsert" and params["item"]["type"] == "turn.end"
+    ]
+    assert turn_end and turn_end[-1]["status"] == "done"

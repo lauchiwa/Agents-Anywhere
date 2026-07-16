@@ -441,6 +441,8 @@ class ClaudeSdkAdapter:
                         emitted_live_content = await self._emit_task_progress(runtime, turn_id, buffered) or emitted_live_content
                     elif _is_rate_limit_message(buffered):
                         await self._capture_rate_limit(runtime, buffered)
+                    elif _is_hook_event_message(buffered):
+                        emitted_live_content = await self._emit_hook_event(runtime, turn_id, buffered) or emitted_live_content
                     else:
                         emitted_live_content = await self._emit_sdk_message(runtime, turn_id, buffered) or emitted_live_content
                 if not emitted_live_content:
@@ -475,6 +477,16 @@ class ClaudeSdkAdapter:
                 # timeline content, so it never counts as emitted_live_content.
                 await self._capture_rate_limit(runtime, message)
                 continue
+            if _is_hook_event_message(message):
+                # Hook lifecycle event (include_hook_events). Only Notification
+                # surfaces a timeline item; every other hook is swallowed inside
+                # _emit_hook_event. Never route it to _emit_sdk_message.
+                if runtime.external_session_id is None:
+                    buffered_messages.append(message)
+                    continue
+                await self._emit_pending_user_message(runtime, turn_id)
+                emitted_live_content = await self._emit_hook_event(runtime, turn_id, message) or emitted_live_content
+                continue
             if runtime.external_session_id is None:
                 buffered_messages.append(message)
                 continue
@@ -490,6 +502,8 @@ class ClaudeSdkAdapter:
                     await self._emit_task_progress(runtime, turn_id, buffered)
                 elif _is_rate_limit_message(buffered):
                     await self._capture_rate_limit(runtime, buffered)
+                elif _is_hook_event_message(buffered):
+                    await self._emit_hook_event(runtime, turn_id, buffered)
                 else:
                     await self._emit_sdk_message(runtime, turn_id, buffered)
             await self._finalize_live_stream_items(runtime, turn_id, status=status)
@@ -584,6 +598,39 @@ class ClaudeSdkAdapter:
         updated["updatedAt"] = utc_now()
         runtime.live_tool_items[card_id] = updated
         await self._emit_item(runtime.session_id, updated)
+        return True
+
+    async def _emit_hook_event(self, runtime: _SdkSessionRuntime, turn_id: str, message: Any) -> bool:
+        # include_hook_events streams every hook lifecycle event back as a
+        # HookEventMessage. We surface only Notification (a CLI-initiated
+        # message asking for the user's attention — there is no other channel
+        # for it); every other hook is already covered elsewhere (tool lifecycle
+        # by tool_result, sub-agent by task progress, compaction by the compact
+        # boundary) so we swallow them here rather than let them fall through to
+        # _emit_sdk_message and pollute the timeline. Fires on hook_response so
+        # we act once per hook, not on both started and response.
+        notification = _notification_from_hook_message(message)
+        if notification is None:
+            return False
+        content: dict[str, Any] = {"kind": "notification", "message": notification["message"]}
+        if notification.get("title"):
+            content["title"] = notification["title"]
+        if notification.get("notificationType"):
+            content["notificationType"] = notification["notificationType"]
+        item = _timeline_item(
+            id=f"{turn_id}:notification:{_short_hash([notification['message'], notification.get('title'), runtime.next_order_seq])}",
+            session_id=runtime.session_id,
+            turn_id=turn_id,
+            item_type="system",
+            status="done",
+            role="system",
+            content=content,
+            external_session_id=runtime.external_session_id,
+            source_item_type="hook_notification",
+            derived_key="notification",
+            order_seq=_next_order(runtime),
+        )
+        await self._emit_item(runtime.session_id, item)
         return True
 
     async def _emit_normalized(
@@ -841,6 +888,14 @@ class ClaudeSdkAdapter:
             "include_partial_messages": True,
             "can_use_tool": self._can_use_tool,
             "stderr": lambda line: _record_stderr(runtime, line),
+            # Stream hook lifecycle events into the message loop as
+            # HookEventMessage. We only act on Notification (a CLI-initiated
+            # system message with no other channel); every other hook is
+            # dropped in _receive_response (see _is_hook_event_message). This
+            # does not replace the PreToolUse decision callback below — that
+            # stays the permission gate; include_hook_events is purely
+            # observational.
+            "include_hook_events": True,
         }
         if runtime.cwd:
             kwargs["cwd"] = runtime.cwd
@@ -1677,6 +1732,50 @@ def _rate_limit_from_message(message: Any) -> dict[str, Any] | None:
     overage_resets_at = _int(_info_field("overage_resets_at", "overageResetsAt"))
     if overage_resets_at is not None:
         out["overageResetsAt"] = overage_resets_at
+    return out
+
+
+def _is_hook_event_message(message: Any) -> bool:
+    # HookEventMessage (SystemMessage subclass) arrives when include_hook_events
+    # is enabled. Matched by class name to stay consistent with the other
+    # predicates and survive the SDK handing us a plain SystemMessage; the
+    # hook_* subtypes are the wire-level fallback.
+    if message.__class__.__name__.lower() == "hookeventmessage":
+        return True
+    subtype = _optional_string(_extract_attr(message, "subtype"))
+    return subtype in {"hook_started", "hook_response"}
+
+
+def _notification_from_hook_message(message: Any) -> dict[str, Any] | None:
+    """Extract a user-facing notification from a Notification hook event.
+
+    Returns None for every other hook (which we enable en masse via
+    include_hook_events but only surface Notification from) and for the
+    hook_started phase (we act on the completed hook_response only, so a single
+    Notification produces one timeline item, not two)."""
+    event_name = _optional_string(_extract_attr(message, "hook_event_name", "hookEventName"))
+    data = _extract_attr(message, "data")
+    data = data if isinstance(data, dict) else {}
+    if event_name is None:
+        event_name = _optional_string(data.get("hook_event_name") or data.get("hookEventName"))
+    if event_name != "Notification":
+        return None
+    subtype = _optional_string(_extract_attr(message, "subtype")) or _optional_string(data.get("subtype"))
+    if subtype == "hook_started":
+        return None
+    # The Notification payload rides under data; the hook input is nested under
+    # data["input"] on some CLI builds and flat on others. Accept both.
+    payload = data.get("input") if isinstance(data.get("input"), dict) else data
+    message_text = _optional_string(payload.get("message")) or _optional_string(data.get("message"))
+    if not message_text:
+        return None
+    out: dict[str, Any] = {"message": message_text}
+    title = _optional_string(payload.get("title")) or _optional_string(data.get("title"))
+    if title:
+        out["title"] = title
+    notification_type = _optional_string(payload.get("notification_type") or payload.get("notificationType"))
+    if notification_type:
+        out["notificationType"] = notification_type
     return out
 
 
