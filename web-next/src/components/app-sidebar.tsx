@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Search, Plus, Settings, Users, Server, LogOut, Pin, Archive, CheckCheck, Copy, FolderOpen, Pencil, LayoutDashboard, GitFork } from "lucide-react"
+import { Search, Plus, Settings, Users, Server, LogOut, Pin, Archive, CheckCheck, Copy, FolderOpen, Pencil, LayoutDashboard, GitFork, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { PairDeviceDialog } from "@/components/pair-device-dialog"
 
@@ -39,6 +39,16 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -70,6 +80,7 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
     toggleArchiveSession,
     renameSession,
     forkSession,
+    deleteSession,
     refreshData,
   } = useWorkspace()
   const { signOut, me, session: authSession } = useAuth()
@@ -184,6 +195,7 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
                     onToggleArchive={() => toggleArchiveSession(item.id)}
                     onRename={(title) => renameSession(item.id, title)}
                     onFork={() => forkSession(item.id)}
+                    onDelete={() => deleteSession(item.id)}
                   />
                 ))}
               </SidebarMenu>
@@ -222,6 +234,7 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
                     onToggleArchive={() => toggleArchiveSession(item.id)}
                     onRename={(title) => renameSession(item.id, title)}
                     onFork={() => forkSession(item.id)}
+                    onDelete={() => deleteSession(item.id)}
                   />
                 ))
               )}
@@ -332,6 +345,7 @@ function SessionSidebarItem({
   onToggleArchive,
   onRename,
   onFork,
+  onDelete,
 }: {
   item: { id: string; title?: string | null; status: string; unread: boolean; pinned: boolean; archived: boolean; externalSessionId?: string | null }
   isActive: boolean
@@ -340,6 +354,7 @@ function SessionSidebarItem({
   onToggleArchive: () => void
   onRename: (title: string) => Promise<boolean>
   onFork: () => void
+  onDelete: () => Promise<void>
 }) {
   const t = useTranslations("dashboard")
   const tSession = useTranslations("dashboard.session")
@@ -348,6 +363,8 @@ function SessionSidebarItem({
   const [titleDraft, setTitleDraft] = React.useState(item.title ?? "")
   const [renaming, setRenaming] = React.useState(false)
   const [forking, setForking] = React.useState(false)
+  const [deleteOpen, setDeleteOpen] = React.useState(false)
+  const [deleting, setDeleting] = React.useState(false)
 
   React.useEffect(() => {
     if (!renameOpen) setTitleDraft(item.title ?? "")
@@ -490,8 +507,48 @@ function SessionSidebarItem({
             <Copy className="size-4" />
             {t("actions.copySessionId")}
           </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            className="text-destructive focus:text-destructive"
+            onSelect={() => setDeleteOpen(true)}
+          >
+            <Trash2 className="size-4" />
+            {t("actions.delete")}
+          </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("actions.deleteConfirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("actions.deleteConfirmDesc", { title: item.title ?? item.id })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>{tCommon("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async (e) => {
+                e.preventDefault()
+                setDeleting(true)
+                try {
+                  await onDelete()
+                  setDeleteOpen(false)
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : t("actions.deleteFailed"))
+                } finally {
+                  setDeleting(false)
+                }
+              }}
+            >
+              {deleting ? <Spinner className="size-4" /> : t("actions.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={renameOpen} onOpenChange={(open) => {
         if (open) {

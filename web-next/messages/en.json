@@ -273,7 +273,11 @@
       "unpin": "Unpin",
       "fork": "Fork",
       "forking": "Forking…",
-      "forkFailed": "Fork failed"
+      "forkFailed": "Fork failed",
+      "delete": "Delete",
+      "deleteConfirmTitle": "Delete session?",
+      "deleteConfirmDesc": "This will permanently delete \"{title}\". This action cannot be undone.",
+      "deleteFailed": "Delete failed"
     },
     "account": {
       "menu": "Account menu"

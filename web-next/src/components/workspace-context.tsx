@@ -229,6 +229,7 @@ type WorkspaceState = {
   toggleArchiveSession: (id: string) => void
   renameSession: (id: string, title: string) => Promise<boolean>
   forkSession: (id: string) => Promise<void>
+  deleteSession: (id: string) => Promise<void>
   markSessionRead: (id: string) => void
   upsertSession: (session: RealSessionView) => void
   addOptimisticMessage: (message: OptimisticSessionMessage) => void
@@ -623,6 +624,18 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     }
   }, [authSession?.accessToken, sessions, pushRoute])
 
+  const deleteSession = React.useCallback(async (id: string) => {
+    const targetSession = sessions.find((s) => s.id === id)
+    if (!targetSession || !authSession?.accessToken) return
+    const externalSessionId = targetSession.externalSessionId
+    if (!externalSessionId) return
+    await dashboardApi.deleteSession(authSession.accessToken, id, externalSessionId, targetSession.cwd ?? undefined)
+    setSessions((prev) => prev.filter((s) => s.id !== id))
+    if (route.page === "session" && route.sessionId === id) {
+      pushRoute({ page: "home" })
+    }
+  }, [authSession?.accessToken, sessions, route, pushRoute])
+
   const upsertSession = React.useCallback((session: RealSessionView) => {
     const mapped = mapSession(session)
     setSessions((prev) => {
@@ -802,6 +815,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     toggleArchiveSession,
     renameSession,
     forkSession,
+    deleteSession,
     markSessionRead,
     upsertSession,
     addOptimisticMessage,

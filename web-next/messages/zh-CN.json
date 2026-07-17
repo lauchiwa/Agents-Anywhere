@@ -273,7 +273,11 @@
       "unpin": "取消置顶",
       "fork": "Fork 会话",
       "forking": "Fork 中…",
-      "forkFailed": "Fork 失败"
+      "forkFailed": "Fork 失败",
+      "delete": "删除会话",
+      "deleteConfirmTitle": "确认删除会话？",
+      "deleteConfirmDesc": "将永久删除「{title}」，此操作无法撤销。",
+      "deleteFailed": "删除失败"
     },
     "account": {
       "menu": "账号菜单"
