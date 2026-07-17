@@ -387,10 +387,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           }
         } catch { /* ignore malformed */ }
       }
-      eventSource.onerror = () => {
-        eventSource?.close()
-        eventSource = null
-      }
+      // No onerror handler: on a transient drop the browser's native
+      // EventSource reconnects on its own. Force-closing here would kill that
+      // auto-reconnect and strand the dashboard on the 30s poll for the rest of
+      // the session — realtime never came back after the first network blip.
+      // While the stream is reconnecting (readyState !== OPEN) the poll below
+      // still refetches, so updates keep flowing at the fallback cadence.
     } catch { /* SSE unavailable */ }
 
     // Fallback polling when SSE is disconnected

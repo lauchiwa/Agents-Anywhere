@@ -653,7 +653,6 @@ async def apply_connector_notification(
         if terminal_stream_hub is not None:
             await terminal_stream_hub.publish_output(connector_id, params)
         if broker is not None and isinstance(terminal_id, str) and isinstance(data_b64, str) and isinstance(seq, int):
-            import base64
             try:
                 data = base64.b64decode(data_b64)
             except Exception:

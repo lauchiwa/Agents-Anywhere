@@ -187,7 +187,6 @@ class SessionRunService:
         except ValueError as exc:
             raise SessionRunInvalidConfigError(str(exc)) from exc
 
-        await self._store.set_session_status(session_id, "running")
         params: dict[str, Any] = {
             "sessionId": session_id,
             "runtime": session.runtime,
@@ -230,6 +229,12 @@ class SessionRunService:
                     session_id,
                 )
 
+        # Flip to running only after every fallible prep step (attachments,
+        # mcp) has succeeded and immediately before we record the active run.
+        # Doing it earlier left a session stuck in "running" with no active run
+        # if attachment resolution raised, since the turn.start error path
+        # (which resets status + clears the run) was never reached.
+        await self._store.set_session_status(session_id, "running")
         await self._store.start_active_run(
             session_id=session_id,
             runtime=session.runtime,

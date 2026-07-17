@@ -2538,6 +2538,74 @@ def test_send_message_forwards_uploaded_attachment_metadata_to_connector(tmp_pat
     ]
 
 
+def test_send_message_attachment_failure_does_not_wedge_session(tmp_path):
+    """A bad attachment fileId must fail cleanly without leaving the session
+    stuck in 'running'. The status flip happens only after all fallible prep
+    (attachment resolution) succeeds, so an early failure leaves status at
+    'idle' and never starts a turn.start RPC."""
+    client = make_client(tmp_path)
+    connector_id, _, session_id, headers = create_connector_and_session(client)
+    fake_rpc = FakeLocalRpc()
+    client.app.state.rpc = fake_rpc
+    asyncio.run(client.app.state.store.set_connector_status(connector_id, "online"))
+    client.post(f"/sessions/{session_id}/takeover", headers=headers).raise_for_status()
+
+    response = client.post(
+        f"/sessions/{session_id}/messages",
+        headers=headers,
+        json={
+            "content": "read attachment",
+            "attachments": [{"fileId": "file_does_not_exist"}],
+        },
+    )
+
+    assert response.status_code == 404, response.text
+    session = asyncio.run(
+        client.app.state.store.get_session(session_id, user_id=ADMIN_USER)
+    )
+    assert session.status != "running"
+    assert session.status in {"idle", "error"}
+    # No turn.start should have been dispatched since prep failed first.
+    assert all(method != "turn.start" for _, method, _, _ in fake_rpc.requests)
+
+
+def test_fs_transfer_download_cross_user_denied(tmp_path):
+    """A user who does not own a connector cannot download that connector's
+    fs transfer, even with a valid transfer id + token. The ownership check
+    in _require_owned_online_connector rejects the mismatched user before any
+    connector RPC is dispatched, so cross-user access is contained."""
+    client = make_client(tmp_path)
+    fake_rpc = FakeLocalRpc()
+    client.app.state.rpc = fake_rpc
+    connector_a, _, _, _ = create_connector_and_session(client, user_id=ADMIN_USER)
+    user_b_headers = auth_headers(client, user_id="user2")
+
+    # Register a transfer directly on connector A's relay manager. This is what
+    # /connectors/{A}/fs/read produces after a successful fs.prepareDownload.
+    transfer = client.app.state.fs_downloads.create(
+        connector_id=connector_a,
+        root="/repo",
+        path="/repo/secret.bin",
+        name="secret.bin",
+        size=6,
+        sha256="abc",
+        media_type="application/octet-stream",
+    )
+
+    # User B knows (guesses) the transfer id + token but does not own connector A.
+    response = client.get(
+        f"/connectors/{connector_a}/fs/transfers/{transfer.transfer_id}"
+        f"?token={transfer.token}",
+        headers=user_b_headers,
+    )
+
+    assert response.status_code == 404, response.text
+    # Ownership was rejected before any fs.uploadPreparedDownload RPC fired.
+    assert all(
+        method != "fs.uploadPreparedDownload" for _, method, _, _ in fake_rpc.requests
+    )
+
+
 def test_ingest_adds_active_run_attachments_to_user_message(tmp_path):
     client = make_client(tmp_path)
     connector_id, access_token, session_id, headers = create_connector_and_session(client)

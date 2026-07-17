@@ -114,6 +114,11 @@ class ShellBackend:
                 timed_out = True
                 await self._terminate_process(process)
                 stdout, stderr = await process.communicate()
+            if record.get("cancelled"):
+                # task_cancel already terminated the process and will emit the
+                # terminal "cancelled" notification itself; suppress the spurious
+                # "completed" that communicate() unblocking on the kill produces.
+                return
             result = shell_result(cwd, command, process.returncode, timed_out, start, stdout, stderr)
             await self._notify(
                 "shell.task.completed",

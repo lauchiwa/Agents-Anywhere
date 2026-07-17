@@ -503,9 +503,9 @@ class BackendRpcClient:
             except asyncio.CancelledError:
                 return
             batch: list[dict[str, Any]] = [first]
-            deadline = asyncio.get_event_loop().time() + FLUSH_WINDOW_SECONDS
+            deadline = asyncio.get_running_loop().time() + FLUSH_WINDOW_SECONDS
             while len(batch) < FLUSH_MAX:
-                remaining = deadline - asyncio.get_event_loop().time()
+                remaining = deadline - asyncio.get_running_loop().time()
                 if remaining <= 0:
                     break
                 try:
