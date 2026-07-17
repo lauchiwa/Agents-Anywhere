@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Search, Plus, Settings, Users, Server, LogOut, Pin, Archive, CheckCheck, Copy, FolderOpen, Pencil, LayoutDashboard, GitFork, Trash2 } from "lucide-react"
+import { Search, Plus, Settings, Users, Server, LogOut, Pin, Archive, CheckCheck, Copy, FolderOpen, Pencil, LayoutDashboard, GitFork, Trash2, Tag } from "lucide-react"
 import { toast } from "sonner"
 import { PairDeviceDialog } from "@/components/pair-device-dialog"
 
@@ -81,6 +81,7 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
     renameSession,
     forkSession,
     deleteSession,
+    tagSession,
     refreshData,
   } = useWorkspace()
   const { signOut, me, session: authSession } = useAuth()
@@ -196,6 +197,7 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
                     onRename={(title) => renameSession(item.id, title)}
                     onFork={() => forkSession(item.id)}
                     onDelete={() => deleteSession(item.id)}
+                    onTag={(tag) => tagSession(item.id, tag)}
                   />
                 ))}
               </SidebarMenu>
@@ -235,6 +237,7 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
                     onRename={(title) => renameSession(item.id, title)}
                     onFork={() => forkSession(item.id)}
                     onDelete={() => deleteSession(item.id)}
+                    onTag={(tag) => tagSession(item.id, tag)}
                   />
                 ))
               )}
@@ -346,8 +349,9 @@ function SessionSidebarItem({
   onRename,
   onFork,
   onDelete,
+  onTag,
 }: {
-  item: { id: string; title?: string | null; status: string; unread: boolean; pinned: boolean; archived: boolean; externalSessionId?: string | null }
+  item: { id: string; title?: string | null; status: string; unread: boolean; pinned: boolean; archived: boolean; externalSessionId?: string | null; tag?: string | null }
   isActive: boolean
   onOpen: () => void
   onTogglePin: () => void
@@ -355,6 +359,7 @@ function SessionSidebarItem({
   onRename: (title: string) => Promise<boolean>
   onFork: () => void
   onDelete: () => Promise<void>
+  onTag: (tag: string | null) => Promise<void>
 }) {
   const t = useTranslations("dashboard")
   const tSession = useTranslations("dashboard.session")
@@ -365,6 +370,9 @@ function SessionSidebarItem({
   const [forking, setForking] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
+  const [tagOpen, setTagOpen] = React.useState(false)
+  const [tagDraft, setTagDraft] = React.useState("")
+  const [tagging, setTagging] = React.useState(false)
 
   React.useEffect(() => {
     if (!renameOpen) setTitleDraft(item.title ?? "")
@@ -435,6 +443,11 @@ function SessionSidebarItem({
                   )}
                 />
                 <span className="truncate">{item.title}</span>
+                {item.tag && (
+                  <span className="ml-1 shrink-0 rounded px-1 py-0.5 text-[10px] font-medium leading-none bg-muted text-muted-foreground">
+                    {item.tag}
+                  </span>
+                )}
               </SidebarMenuButton>
             </div>
           </ContextMenuTrigger>
@@ -494,6 +507,13 @@ function SessionSidebarItem({
             <GitFork className="size-4" />
             {forking ? t("actions.forking") : t("actions.fork")}
           </ContextMenuItem>
+          <ContextMenuItem onSelect={() => {
+            setTagDraft(item.tag ?? "")
+            setTagOpen(true)
+          }}>
+            <Tag className="size-4" />
+            {t("actions.setTag")}
+          </ContextMenuItem>
           <ContextMenuItem onSelect={onTogglePin}>
             <Pin className="size-4" />
             {item.pinned ? t("actions.unpin") : t("actions.pin")}
@@ -549,6 +569,48 @@ function SessionSidebarItem({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={tagOpen} onOpenChange={(open) => {
+        if (!open) { setTagOpen(false); setTagDraft("") }
+      }}>
+        <DialogContent className="sm:max-w-sm">
+          <form
+            className="space-y-4"
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (tagging) return
+              setTagging(true)
+              try {
+                await onTag(tagDraft.trim() || null)
+                setTagOpen(false)
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : t("actions.tagFailed"))
+              } finally {
+                setTagging(false)
+              }
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>{t("actions.setTag")}</DialogTitle>
+            </DialogHeader>
+            <Input
+              autoFocus
+              value={tagDraft}
+              onChange={(e) => setTagDraft(e.target.value)}
+              placeholder={t("actions.tagPlaceholder")}
+              disabled={tagging}
+            />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setTagOpen(false)} disabled={tagging}>
+                {tCommon("cancel")}
+              </Button>
+              <Button type="submit" disabled={tagging}>
+                {tagging ? <Spinner className="size-4" /> : tCommon("save")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={renameOpen} onOpenChange={(open) => {
         if (open) {

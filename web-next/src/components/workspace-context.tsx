@@ -230,6 +230,7 @@ type WorkspaceState = {
   renameSession: (id: string, title: string) => Promise<boolean>
   forkSession: (id: string) => Promise<void>
   deleteSession: (id: string) => Promise<void>
+  tagSession: (id: string, tag: string | null) => Promise<void>
   markSessionRead: (id: string) => void
   upsertSession: (session: RealSessionView) => void
   addOptimisticMessage: (message: OptimisticSessionMessage) => void
@@ -636,6 +637,15 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     }
   }, [authSession?.accessToken, sessions, route, pushRoute])
 
+  const tagSession = React.useCallback(async (id: string, tag: string | null) => {
+    const targetSession = sessions.find((s) => s.id === id)
+    if (!targetSession || !authSession?.accessToken) return
+    const externalSessionId = targetSession.externalSessionId
+    if (!externalSessionId) return
+    await dashboardApi.tagSession(authSession.accessToken, id, externalSessionId, tag, targetSession.cwd ?? undefined)
+    setSessions((prev) => prev.map((s) => s.id === id ? { ...s, tag: tag ?? undefined } : s))
+  }, [authSession?.accessToken, sessions])
+
   const upsertSession = React.useCallback((session: RealSessionView) => {
     const mapped = mapSession(session)
     setSessions((prev) => {
@@ -816,6 +826,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     renameSession,
     forkSession,
     deleteSession,
+    tagSession,
     markSessionRead,
     upsertSession,
     addOptimisticMessage,

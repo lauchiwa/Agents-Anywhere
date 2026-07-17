@@ -277,7 +277,10 @@
       "delete": "Delete",
       "deleteConfirmTitle": "Delete session?",
       "deleteConfirmDesc": "This will permanently delete \"{title}\". This action cannot be undone.",
-      "deleteFailed": "Delete failed"
+      "deleteFailed": "Delete failed",
+      "setTag": "Set Tag",
+      "tagPlaceholder": "Tag label (leave empty to clear)",
+      "tagFailed": "Tag update failed"
     },
     "account": {
       "menu": "Account menu"
