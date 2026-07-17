@@ -471,6 +471,58 @@ class ClaudeSdkAdapter:
             return {"ok": False, "reason": "rename_session failed"}
         return {"ok": True}
 
+    async def delete_session(self, params: dict[str, Any]) -> dict[str, Any]:
+        external_session_id = _optional_string(params.get("externalSessionId"))
+        if not external_session_id:
+            return {"ok": False, "reason": "externalSessionId required"}
+        cwd = _optional_string(params.get("cwd"))
+        sdk = self._load_sdk()
+        delete_fn = getattr(sdk, "delete_session", None)
+        if not callable(delete_fn):
+            return {"ok": False, "reason": "sdk does not support delete_session"}
+        try:
+            if cwd:
+                delete_fn(external_session_id, directory=cwd)
+            else:
+                delete_fn(external_session_id)
+        except Exception:
+            logger.debug(
+                "sdk delete_session failed external_session_id={}",
+                external_session_id,
+                exc_info=True,
+            )
+            return {"ok": False, "reason": "delete_session failed"}
+        return {"ok": True}
+
+    async def fork_session(self, params: dict[str, Any]) -> dict[str, Any]:
+        external_session_id = _optional_string(params.get("externalSessionId"))
+        if not external_session_id:
+            return {"ok": False, "reason": "externalSessionId required"}
+        cwd = _optional_string(params.get("cwd"))
+        up_to_message_id = _optional_string(params.get("upToMessageId"))
+        title = _optional_string(params.get("title"))
+        sdk = self._load_sdk()
+        fork_fn = getattr(sdk, "fork_session", None)
+        if not callable(fork_fn):
+            return {"ok": False, "reason": "sdk does not support fork_session"}
+        try:
+            kwargs: dict[str, Any] = {}
+            if cwd:
+                kwargs["directory"] = cwd
+            if up_to_message_id:
+                kwargs["up_to_message_id"] = up_to_message_id
+            if title:
+                kwargs["title"] = title
+            result = fork_fn(external_session_id, **kwargs)
+            return {"ok": True, "sessionId": result.session_id}
+        except Exception:
+            logger.debug(
+                "sdk fork_session failed external_session_id={}",
+                external_session_id,
+                exc_info=True,
+            )
+            return {"ok": False, "reason": "fork_session failed"}
+
     def _runtime_for(self, session_id: str, params: dict[str, Any]) -> _SdkSessionRuntime:
         runtime = self._sessions.get(session_id)
         if runtime is None:

@@ -2175,3 +2175,158 @@ async def test_context_usage_rpc_returns_usage():
     assert usage.get("totalTokens") == 5000
     assert usage.get("maxTokens") == 200000
 
+
+@pytest.mark.anyio
+async def test_delete_session_rpc():
+    """delete_session calls sdk.delete_session with the right args and returns ok:True."""
+    delete_calls: list[tuple[Any, ...]] = []
+
+    class SdkWithDelete:
+        ClaudeAgentOptions = FakeSdk.ClaudeAgentOptions
+        ClaudeSDKClient = FakeSdk.ClaudeSDKClient
+        HookMatcher = FakeSdk.HookMatcher
+        PermissionResultAllow = FakeSdk.PermissionResultAllow
+        PermissionResultDeny = FakeSdk.PermissionResultDeny
+
+        @staticmethod
+        def delete_session(external_session_id: str, **kwargs: Any) -> None:
+            delete_calls.append((external_session_id, kwargs))
+
+    adapter = ClaudeSdkAdapter(sdk_module=SdkWithDelete)
+    result = await adapter.delete_session(
+        {"externalSessionId": "ext_del_1", "cwd": "/repo"}
+    )
+
+    assert result == {"ok": True}
+    assert len(delete_calls) == 1
+    assert delete_calls[0] == ("ext_del_1", {"directory": "/repo"})
+
+
+@pytest.mark.anyio
+async def test_delete_session_rpc_without_cwd():
+    """delete_session without cwd calls sdk.delete_session with only the id."""
+    delete_calls: list[tuple[Any, ...]] = []
+
+    class SdkWithDelete:
+        ClaudeAgentOptions = FakeSdk.ClaudeAgentOptions
+        ClaudeSDKClient = FakeSdk.ClaudeSDKClient
+        HookMatcher = FakeSdk.HookMatcher
+        PermissionResultAllow = FakeSdk.PermissionResultAllow
+        PermissionResultDeny = FakeSdk.PermissionResultDeny
+
+        @staticmethod
+        def delete_session(external_session_id: str, **kwargs: Any) -> None:
+            delete_calls.append((external_session_id, kwargs))
+
+    adapter = ClaudeSdkAdapter(sdk_module=SdkWithDelete)
+    result = await adapter.delete_session({"externalSessionId": "ext_del_2"})
+
+    assert result == {"ok": True}
+    assert len(delete_calls) == 1
+    assert delete_calls[0] == ("ext_del_2", {})
+
+
+@pytest.mark.anyio
+async def test_delete_session_rpc_missing_external_id():
+    """delete_session without externalSessionId returns ok:False immediately."""
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+    result = await adapter.delete_session({})
+    assert result["ok"] is False
+    assert "externalSessionId" in result.get("reason", "")
+
+
+@pytest.mark.anyio
+async def test_delete_session_rpc_missing_sdk_method():
+    """When sdk has no delete_session, return ok:False with a descriptive reason."""
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)  # FakeSdk has no delete_session
+    result = await adapter.delete_session({"externalSessionId": "ext_no_del"})
+    assert result["ok"] is False
+    assert "delete_session" in result.get("reason", "")
+
+
+@pytest.mark.anyio
+async def test_fork_session_rpc():
+    """fork_session calls sdk.fork_session with the right args and returns ok:True with sessionId."""
+
+    @dataclass
+    class ForkResult:
+        session_id: str
+
+    fork_calls: list[tuple[Any, ...]] = []
+
+    class SdkWithFork:
+        ClaudeAgentOptions = FakeSdk.ClaudeAgentOptions
+        ClaudeSDKClient = FakeSdk.ClaudeSDKClient
+        HookMatcher = FakeSdk.HookMatcher
+        PermissionResultAllow = FakeSdk.PermissionResultAllow
+        PermissionResultDeny = FakeSdk.PermissionResultDeny
+
+        @staticmethod
+        def fork_session(external_session_id: str, **kwargs: Any) -> ForkResult:
+            fork_calls.append((external_session_id, kwargs))
+            return ForkResult(session_id="new-uuid-fork-1")
+
+    adapter = ClaudeSdkAdapter(sdk_module=SdkWithFork)
+    result = await adapter.fork_session(
+        {
+            "externalSessionId": "ext_fork_1",
+            "cwd": "/repo",
+            "upToMessageId": "msg_abc",
+            "title": "My Fork",
+        }
+    )
+
+    assert result == {"ok": True, "sessionId": "new-uuid-fork-1"}
+    assert len(fork_calls) == 1
+    assert fork_calls[0] == (
+        "ext_fork_1",
+        {"directory": "/repo", "up_to_message_id": "msg_abc", "title": "My Fork"},
+    )
+
+
+@pytest.mark.anyio
+async def test_fork_session_rpc_minimal_params():
+    """fork_session with only externalSessionId calls sdk.fork_session with no kwargs."""
+
+    @dataclass
+    class ForkResult:
+        session_id: str
+
+    fork_calls: list[tuple[Any, ...]] = []
+
+    class SdkWithFork:
+        ClaudeAgentOptions = FakeSdk.ClaudeAgentOptions
+        ClaudeSDKClient = FakeSdk.ClaudeSDKClient
+        HookMatcher = FakeSdk.HookMatcher
+        PermissionResultAllow = FakeSdk.PermissionResultAllow
+        PermissionResultDeny = FakeSdk.PermissionResultDeny
+
+        @staticmethod
+        def fork_session(external_session_id: str, **kwargs: Any) -> ForkResult:
+            fork_calls.append((external_session_id, kwargs))
+            return ForkResult(session_id="new-uuid-fork-2")
+
+    adapter = ClaudeSdkAdapter(sdk_module=SdkWithFork)
+    result = await adapter.fork_session({"externalSessionId": "ext_fork_2"})
+
+    assert result == {"ok": True, "sessionId": "new-uuid-fork-2"}
+    assert fork_calls[0] == ("ext_fork_2", {})
+
+
+@pytest.mark.anyio
+async def test_fork_session_rpc_missing_external_id():
+    """fork_session without externalSessionId returns ok:False immediately."""
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+    result = await adapter.fork_session({})
+    assert result["ok"] is False
+    assert "externalSessionId" in result.get("reason", "")
+
+
+@pytest.mark.anyio
+async def test_fork_session_rpc_missing_sdk_method():
+    """When sdk has no fork_session, return ok:False with a descriptive reason."""
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)  # FakeSdk has no fork_session
+    result = await adapter.fork_session({"externalSessionId": "ext_no_fork"})
+    assert result["ok"] is False
+    assert "fork_session" in result.get("reason", "")
+

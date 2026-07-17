@@ -552,6 +552,36 @@ export class DashboardApi {
     );
   }
 
+  deleteSession(
+    token: string,
+    sessionId: string,
+    externalSessionId: string,
+    cwd?: string,
+  ): Promise<RpcResponse<unknown>> {
+    return this.client.post<RpcResponse<unknown>>(
+      `/sessions/${encodeURIComponent(sessionId)}/delete`,
+      { externalSessionId, cwd },
+      { token },
+    );
+  }
+
+  forkSession(
+    token: string,
+    sessionId: string,
+    body: {
+      externalSessionId: string;
+      cwd?: string;
+      upToMessageId?: string;
+      title?: string;
+    },
+  ): Promise<RpcResponse<unknown>> {
+    return this.client.post<RpcResponse<unknown>>(
+      `/sessions/${encodeURIComponent(sessionId)}/fork`,
+      body,
+      { token },
+    );
+  }
+
   resolveApproval(
     token: string,
     approvalId: string,

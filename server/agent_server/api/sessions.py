@@ -54,6 +54,18 @@ class McpToggleServerRequest(BaseModel):
     enabled: bool
 
 
+class SessionDeleteRequest(BaseModel):
+    externalSessionId: str
+    cwd: str | None = None
+
+
+class SessionForkRequest(BaseModel):
+    externalSessionId: str
+    cwd: str | None = None
+    upToMessageId: str | None = None
+    title: str | None = None
+
+
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
@@ -544,6 +556,32 @@ async def toggle_mcp_server(
 ) -> RpcResponsePayload:
     try:
         return await run_service.toggle_mcp_server_in_session(session_id, body.serverName, body.enabled, user_id=user_id)
+    except SessionRunError as exc:
+        _raise_session_run_error(exc)
+
+
+@router.post("/{session_id}/delete", response_model=RpcResponsePayload)
+async def delete_session_rpc(
+    session_id: str,
+    body: SessionDeleteRequest,
+    user_id: str = Depends(current_user_id),
+    run_service: SessionRunService = Depends(get_session_run_service),
+) -> RpcResponsePayload:
+    try:
+        return await run_service.delete_session_in_session(session_id, body, user_id=user_id)
+    except SessionRunError as exc:
+        _raise_session_run_error(exc)
+
+
+@router.post("/{session_id}/fork", response_model=RpcResponsePayload)
+async def fork_session_rpc(
+    session_id: str,
+    body: SessionForkRequest,
+    user_id: str = Depends(current_user_id),
+    run_service: SessionRunService = Depends(get_session_run_service),
+) -> RpcResponsePayload:
+    try:
+        return await run_service.fork_session_in_session(session_id, body, user_id=user_id)
     except SessionRunError as exc:
         _raise_session_run_error(exc)
 
