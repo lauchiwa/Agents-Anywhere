@@ -60,8 +60,10 @@ from agent_server.core.models import (
     TerminalPatchRequest,
     TerminalResizeRequest,
     TerminalResponse,
+    McpServersRequest,
+    McpServersResponse,
 )
-from agent_server.core.runtime_config import RuntimeSettingsPatchRequest, RuntimeSettingsResponse
+from agent_server.core.runtime_config import RuntimeSettingsPatchRequest, RuntimeSettingsResponse, sanitize_mcp_servers
 from agent_server.services.runtime_activation import send_active_runtimes
 from agent_server.services.connector_presence import with_effective_connector_status, with_effective_session_connector_status
 from agent_server.services.dashboard_events import publish_dashboard_changed
@@ -331,6 +333,43 @@ async def get_connector_preferences(
         preferences=preferences,
         serverTime=utc_now(),
     )
+
+
+@router.get("/{connector_id}/mcp-servers", response_model=McpServersResponse)
+async def get_connector_mcp_servers(
+    connector_id: str,
+    user_id: str = Depends(current_user_id),
+    db: Store = Depends(get_store),
+) -> McpServersResponse:
+    try:
+        connector = await db.get_connector(connector_id)
+        if connector.userId != user_id:
+            raise KeyError(connector_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="connector not found") from None
+    servers = await db.get_connector_mcp_servers(connector_id)
+    return McpServersResponse(mcpServers=servers or {})
+
+
+@router.put("/{connector_id}/mcp-servers", response_model=McpServersResponse)
+async def put_connector_mcp_servers(
+    connector_id: str,
+    body: McpServersRequest,
+    user_id: str = Depends(current_user_id),
+    db: Store = Depends(get_store),
+) -> McpServersResponse:
+    try:
+        connector = await db.get_connector(connector_id)
+        if connector.userId != user_id:
+            raise KeyError(connector_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="connector not found") from None
+    try:
+        sanitized = sanitize_mcp_servers(body.mcpServers)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await db.set_connector_mcp_servers(connector_id, sanitized)
+    return McpServersResponse(mcpServers=sanitized)
 
 
 @router.post("/{connector_id}/fs/list", response_model=RpcResponsePayload)

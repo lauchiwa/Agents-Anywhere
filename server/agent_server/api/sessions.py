@@ -21,6 +21,8 @@ from agent_server.core.models import (
     BulkArchiveRequest,
     BulkArchiveResponse,
     BulkReadRequest,
+    McpServersRequest,
+    McpServersResponse,
     MessageCreateRequest,
     RpcResponsePayload,
     SessionCreateRequest,
@@ -29,7 +31,7 @@ from agent_server.core.models import (
     SessionStateResponse,
     TakeoverResponse,
 )
-from agent_server.core.runtime_config import RuntimeSettingsPatchRequest, RuntimeSettingsResponse
+from agent_server.core.runtime_config import RuntimeSettingsPatchRequest, RuntimeSettingsResponse, sanitize_mcp_servers
 from agent_server.services.runtime_config import RuntimeConfigService
 from agent_server.services.session_run import SessionRunError, SessionRunService
 from agent_server.services.connector_presence import with_effective_session_connector_status
@@ -524,3 +526,36 @@ async def sync_session(
     except ConnectorRpcError as exc:
         raise HTTPException(status_code=502, detail=exc.message or exc.code) from exc
     return RpcResponsePayload(ok=True, result=result)
+
+
+@router.get("/{session_id}/mcp-servers", response_model=McpServersResponse)
+async def get_session_mcp_servers(
+    session_id: str,
+    user_id: str = Depends(current_user_id),
+    db: Store = Depends(get_store),
+) -> McpServersResponse:
+    try:
+        await db.get_session(session_id, user_id=user_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="session not found") from None
+    servers = await db.get_session_mcp_servers(session_id)
+    return McpServersResponse(mcpServers=servers or {})
+
+
+@router.put("/{session_id}/mcp-servers", response_model=McpServersResponse)
+async def put_session_mcp_servers(
+    session_id: str,
+    body: McpServersRequest,
+    user_id: str = Depends(current_user_id),
+    db: Store = Depends(get_store),
+) -> McpServersResponse:
+    try:
+        await db.get_session(session_id, user_id=user_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="session not found") from None
+    try:
+        sanitized = sanitize_mcp_servers(body.mcpServers)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await db.set_session_mcp_servers(session_id, sanitized)
+    return McpServersResponse(mcpServers=sanitized)

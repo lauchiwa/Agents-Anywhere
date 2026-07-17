@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验证命令、禁用模式；实现完成后按此跑 pytest 全套"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Store mixin 仓储读写模式；check 时验证新方法符合规范"}

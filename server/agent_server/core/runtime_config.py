@@ -675,3 +675,85 @@ def _validate_field_value(key: str, value: Any, field: RuntimeConfigField) -> An
     if not isinstance(value, str):
         raise ValueError(f"{key} must be a string")
     return value
+
+
+_MCP_STDIO_KEYS = {"type", "command", "args", "env"}
+_MCP_HTTP_KEYS = {"type", "url", "headers"}
+_MCP_SSE_KEYS = {"type", "url", "headers"}
+
+
+def sanitize_mcp_servers(raw: Any) -> dict[str, Any]:
+    """Validate and sanitize an mcpServers dict. Raises ValueError on bad input."""
+    if not isinstance(raw, dict):
+        raise ValueError("mcpServers must be an object")
+    result: dict[str, Any] = {}
+    for name, cfg in raw.items():
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"mcp server name must be a non-empty string, got {name!r}")
+        if not isinstance(cfg, dict):
+            raise ValueError(f"mcp server {name!r} config must be an object")
+        server_type = cfg.get("type", "stdio")
+        if not isinstance(server_type, str):
+            raise ValueError(f"mcp server {name!r} type must be a string")
+        if server_type == "sdk":
+            raise ValueError(f"mcp server {name!r} type 'sdk' is not supported via API")
+        if server_type == "stdio":
+            result[name] = _sanitize_mcp_stdio(name, cfg)
+        elif server_type in ("http", "sse"):
+            result[name] = _sanitize_mcp_url(name, cfg, server_type)
+        else:
+            raise ValueError(
+                f"mcp server {name!r} has unsupported type {server_type!r} "
+                f"(expected stdio/http/sse)"
+            )
+    return result
+
+
+def _sanitize_mcp_stdio(name: str, cfg: dict[str, Any]) -> dict[str, Any]:
+    unknown = set(cfg) - _MCP_STDIO_KEYS
+    if unknown:
+        raise ValueError(f"mcp stdio server {name!r} has unknown keys: {sorted(unknown)}")
+    command = cfg.get("command")
+    if not isinstance(command, str) or not command:
+        raise ValueError(f"mcp stdio server {name!r} requires a non-empty 'command' string")
+    validated: dict[str, Any] = {"type": "stdio", "command": command}
+    args = cfg.get("args")
+    if args is not None:
+        if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
+            raise ValueError(f"mcp stdio server {name!r} 'args' must be a list of strings")
+        validated["args"] = list(args)
+    env = cfg.get("env")
+    if env is not None:
+        if not isinstance(env, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in env.items()
+        ):
+            raise ValueError(f"mcp stdio server {name!r} 'env' must be string->string pairs")
+        validated["env"] = dict(env)
+    return validated
+
+
+def _sanitize_mcp_url(name: str, cfg: dict[str, Any], kind: str) -> dict[str, Any]:
+    allowed = _MCP_HTTP_KEYS if kind == "http" else _MCP_SSE_KEYS
+    unknown = set(cfg) - allowed
+    if unknown:
+        raise ValueError(f"mcp {kind} server {name!r} has unknown keys: {sorted(unknown)}")
+    url = cfg.get("url")
+    if not isinstance(url, str) or not url:
+        raise ValueError(f"mcp {kind} server {name!r} requires a non-empty 'url' string")
+    validated: dict[str, Any] = {"type": kind, "url": url}
+    headers = cfg.get("headers")
+    if headers is not None:
+        if not isinstance(headers, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in headers.items()
+        ):
+            raise ValueError(f"mcp {kind} server {name!r} 'headers' must be string->string pairs")
+        validated["headers"] = dict(headers)
+    return validated
+
+
+def merge_mcp_servers(
+    connector: dict[str, Any] | None,
+    session: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Merge connector-level and session-level MCP configs. Session wins by name."""
+    return {**(connector or {}), **(session or {})}

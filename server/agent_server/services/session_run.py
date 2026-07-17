@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from loguru import logger
+
 from agent_server.infra.connector_rpc import ConnectorOfflineError, ConnectorRpcError, ConnectorRpcManager
 from agent_server.core.models import MessageCreateRequest, RpcResponsePayload, SessionCreateRequest
 from agent_server.infra.runtimes.serializers import serializer_for_runtime
@@ -214,6 +216,19 @@ class SessionRunService:
             params["timelineAttachments"] = [
                 _timeline_attachment_payload(item) for item in attachment_payloads
             ]
+
+        if session.runtime == "claude":
+            try:
+                effective_mcp = await self._store.get_effective_mcp_servers(
+                    session_id, session.connectorId
+                )
+                if effective_mcp:
+                    params["mcpServers"] = effective_mcp
+            except Exception:
+                logger.warning(
+                    "failed to load effective mcp servers for session {}; continuing without",
+                    session_id,
+                )
 
         await self._store.start_active_run(
             session_id=session_id,

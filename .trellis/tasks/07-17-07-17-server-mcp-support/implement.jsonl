@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "后端规范总入口：目录结构、DB mixin 模式、错误处理、日志规范"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Store/Mixin 仓储模式、_ensure_compat_schema 迁移写法、_json_dumps/_json_loads 用法"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "ValueError → HTTPException 400 的转换模式，API 端点异常边界写法"}

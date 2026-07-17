@@ -981,3 +981,11 @@ class RpcResponsePayload(BaseModel):
     ok: bool
     result: Any = None
     error: RpcError | None = None
+
+
+class McpServersRequest(BaseModel):
+    mcpServers: dict[str, Any]
+
+
+class McpServersResponse(BaseModel):
+    mcpServers: dict[str, Any]

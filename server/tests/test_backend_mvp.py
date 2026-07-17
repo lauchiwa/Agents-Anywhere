@@ -6080,6 +6080,251 @@ def test_session_rename_skips_connector_when_offline(tmp_path):
     assert len(rename_calls) == 0
 
 
+# ---------------------------------------------------------------------------
+# MCP servers: DB round-trip, merge, sanitize, turn.start injection
+# ---------------------------------------------------------------------------
+
+
+def test_connector_mcp_servers_round_trip(tmp_path):
+    client = make_client(tmp_path)
+    connector_id, _, _, headers = create_connector_and_session(client)
+
+    # Initial GET returns empty
+    r = client.get(f"/connectors/{connector_id}/mcp-servers", headers=headers)
+    assert r.status_code == 200
+    assert r.json()["mcpServers"] == {}
+
+    # PUT valid stdio server
+    payload = {"mcpServers": {"my-server": {"type": "stdio", "command": "npx", "args": ["-y", "server"]}}}
+    r = client.put(f"/connectors/{connector_id}/mcp-servers", headers=headers, json=payload)
+    assert r.status_code == 200
+    assert r.json()["mcpServers"]["my-server"]["command"] == "npx"
+
+    # GET returns persisted value
+    r = client.get(f"/connectors/{connector_id}/mcp-servers", headers=headers)
+    assert r.status_code == 200
+    assert r.json()["mcpServers"]["my-server"]["command"] == "npx"
+
+
+def test_session_mcp_servers_round_trip(tmp_path):
+    client = make_client(tmp_path)
+    _, _, session_id, headers = create_connector_and_session(client)
+
+    # Initial GET returns empty
+    r = client.get(f"/sessions/{session_id}/mcp-servers", headers=headers)
+    assert r.status_code == 200
+    assert r.json()["mcpServers"] == {}
+
+    # PUT valid sse server
+    payload = {"mcpServers": {"remote": {"type": "sse", "url": "http://localhost:9000/sse"}}}
+    r = client.put(f"/sessions/{session_id}/mcp-servers", headers=headers, json=payload)
+    assert r.status_code == 200
+    assert r.json()["mcpServers"]["remote"]["url"] == "http://localhost:9000/sse"
+
+    # GET returns persisted value
+    r = client.get(f"/sessions/{session_id}/mcp-servers", headers=headers)
+    assert r.status_code == 200
+    assert r.json()["mcpServers"]["remote"]["type"] == "sse"
+
+
+def test_effective_mcp_servers_merge(tmp_path):
+    """Session config with same name overrides connector config; disjoint names both appear."""
+    import asyncio
+    from agent_server.infra.repositories.facade import Store
+
+    store = Store(tmp_path / "merge.sqlite3")
+
+    async def run():
+        # Create user, connector, session via the public store API used by tests
+        from agent_server.core.utc import utc_now
+        from agent_server.infra.repositories.store_support import _new_connector_token, _hash_token
+        token = _new_connector_token()
+        connector_id = "c-merge-1"
+        await store._engine.begin().__aenter__()
+
+        # Use low-level insert to avoid full fixture overhead
+        from sqlalchemy import text
+        now = utc_now()
+        async with store._engine.begin() as conn:
+            await conn.execute(text(
+                "INSERT INTO users (id, password_hash, role, disabled, created_at, updated_at) "
+                "VALUES ('u1', 'x', 'admin', 0, :now, :now)"
+            ), {"now": now})
+            await conn.execute(text(
+                "INSERT INTO connectors (id, user_id, name, status, token_hash, token_prefix, created_at, updated_at) "
+                "VALUES (:id, 'u1', 'dev', 'offline', 'h', 'p', :now, :now)"
+            ), {"id": connector_id, "now": now})
+            await conn.execute(text(
+                "INSERT INTO sessions (id, connector_id, runtime, status, takeover, seq, updated_seq, created_at, updated_at) "
+                "VALUES ('s1', :cid, 'claude', 'idle', 0, 1, 1, :now, :now)"
+            ), {"cid": connector_id, "now": now})
+
+        # Set connector-level MCP
+        await store.set_connector_mcp_servers(connector_id, {
+            "shared": {"type": "stdio", "command": "connector-version"},
+            "conn-only": {"type": "stdio", "command": "conn-cmd"},
+        })
+        # Set session-level MCP (same "shared" name overrides)
+        await store.set_session_mcp_servers("s1", {
+            "shared": {"type": "http", "url": "http://session-override"},
+            "sess-only": {"type": "sse", "url": "http://sess"},
+        })
+
+        effective = await store.get_effective_mcp_servers("s1", connector_id)
+        return effective
+
+    effective = asyncio.run(run())
+    # session wins on "shared"
+    assert effective["shared"]["type"] == "http"
+    assert effective["shared"]["url"] == "http://session-override"
+    # both disjoint names present
+    assert effective["conn-only"]["command"] == "conn-cmd"
+    assert effective["sess-only"]["url"] == "http://sess"
+
+
+def test_mcp_servers_sanitize_rejects_sdk_type(tmp_path):
+    client = make_client(tmp_path)
+    connector_id, _, _, headers = create_connector_and_session(client)
+
+    r = client.put(
+        f"/connectors/{connector_id}/mcp-servers",
+        headers=headers,
+        json={"mcpServers": {"bad": {"type": "sdk", "command": "x"}}},
+    )
+    assert r.status_code == 400
+    assert "sdk" in r.json()["detail"]
+
+
+def test_mcp_servers_sanitize_rejects_missing_command(tmp_path):
+    client = make_client(tmp_path)
+    connector_id, _, _, headers = create_connector_and_session(client)
+
+    r = client.put(
+        f"/connectors/{connector_id}/mcp-servers",
+        headers=headers,
+        json={"mcpServers": {"bad": {"type": "stdio"}}},
+    )
+    assert r.status_code == 400
+    assert "command" in r.json()["detail"]
+
+
+def test_mcp_servers_sanitize_rejects_unknown_keys(tmp_path):
+    client = make_client(tmp_path)
+    connector_id, _, _, headers = create_connector_and_session(client)
+
+    r = client.put(
+        f"/connectors/{connector_id}/mcp-servers",
+        headers=headers,
+        json={"mcpServers": {"bad": {"type": "stdio", "command": "x", "unknown_key": "y"}}},
+    )
+    assert r.status_code == 400
+
+
+def test_turn_start_injects_mcp_servers(tmp_path):
+    """send_message must include mcpServers in the turn.start RPC params when config is set."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    import asyncio
+    from agent_server.infra.repositories.facade import Store
+    from agent_server.infra.connector_rpc import ConnectorRpcManager
+    from agent_server.services.session_run import SessionRunService
+    from agent_server.core.models import MessageCreateRequest
+
+    store = Store(tmp_path / "inject.sqlite3")
+
+    async def run():
+        from agent_server.core.utc import utc_now
+        from sqlalchemy import text
+        now = utc_now()
+        connector_id = "c-inject"
+        async with store._engine.begin() as conn:
+            await conn.execute(text(
+                "INSERT INTO users (id, password_hash, role, disabled, created_at, updated_at) "
+                "VALUES ('u1', 'x', 'admin', 0, :now, :now)"
+            ), {"now": now})
+            await conn.execute(text(
+                "INSERT INTO connectors (id, user_id, name, status, token_hash, token_prefix, created_at, updated_at) "
+                "VALUES (:id, 'u1', 'dev', 'online', 'h', 'p', :now, :now)"
+            ), {"id": connector_id, "now": now})
+            await conn.execute(text(
+                "INSERT INTO sessions (id, connector_id, runtime, status, takeover, seq, updated_seq, created_at, updated_at) "
+                "VALUES ('s-inject', :cid, 'claude', 'idle', 1, 1, 1, :now, :now)"
+            ), {"cid": connector_id, "now": now})
+
+        await store.set_connector_mcp_servers(connector_id, {
+            "my-tool": {"type": "stdio", "command": "my-cmd"},
+        })
+
+        captured_params = {}
+
+        async def fake_request(connector_id, method, params, **kw):
+            captured_params.update(params)
+            return {"ok": True}
+
+        manager = MagicMock(spec=ConnectorRpcManager)
+        manager.is_online.return_value = True
+        manager.request = AsyncMock(side_effect=fake_request)
+
+        svc = SessionRunService(store, manager)
+        payload = MessageCreateRequest(content="hello")
+
+        await svc.send_message("s-inject", payload, user_id="u1")
+        return captured_params
+
+    params = asyncio.run(run())
+    assert "mcpServers" in params
+    assert params["mcpServers"]["my-tool"]["command"] == "my-cmd"
+
+
+def test_turn_start_no_mcp_when_empty(tmp_path):
+    """send_message must NOT include mcpServers when effective config is empty."""
+    from unittest.mock import AsyncMock, MagicMock
+    import asyncio
+    from agent_server.infra.repositories.facade import Store
+    from agent_server.infra.connector_rpc import ConnectorRpcManager
+    from agent_server.services.session_run import SessionRunService
+    from agent_server.core.models import MessageCreateRequest
+
+    store = Store(tmp_path / "no-mcp.sqlite3")
+
+    async def run():
+        from agent_server.core.utc import utc_now
+        from sqlalchemy import text
+        now = utc_now()
+        connector_id = "c-nomcp"
+        async with store._engine.begin() as conn:
+            await conn.execute(text(
+                "INSERT INTO users (id, password_hash, role, disabled, created_at, updated_at) "
+                "VALUES ('u1', 'x', 'admin', 0, :now, :now)"
+            ), {"now": now})
+            await conn.execute(text(
+                "INSERT INTO connectors (id, user_id, name, status, token_hash, token_prefix, created_at, updated_at) "
+                "VALUES (:id, 'u1', 'dev', 'online', 'h', 'p', :now, :now)"
+            ), {"id": connector_id, "now": now})
+            await conn.execute(text(
+                "INSERT INTO sessions (id, connector_id, runtime, status, takeover, seq, updated_seq, created_at, updated_at) "
+                "VALUES ('s-nomcp', :cid, 'claude', 'idle', 1, 1, 1, :now, :now)"
+            ), {"cid": connector_id, "now": now})
+
+        captured_params = {}
+
+        async def fake_request(connector_id, method, params, **kw):
+            captured_params.update(params)
+            return {"ok": True}
+
+        manager = MagicMock(spec=ConnectorRpcManager)
+        manager.is_online.return_value = True
+        manager.request = AsyncMock(side_effect=fake_request)
+
+        svc = SessionRunService(store, manager)
+        payload = MessageCreateRequest(content="hello")
+
+        await svc.send_message("s-nomcp", payload, user_id="u1")
+        return captured_params
+
+    params = asyncio.run(run())
+    assert "mcpServers" not in params
+
+
 class FakeWebSocket:
     def __init__(self) -> None:
         self.sent: asyncio.Queue[dict[str, Any]] = asyncio.Queue()

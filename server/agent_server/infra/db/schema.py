@@ -36,6 +36,9 @@ connectors = Table(
     # JSON blob written by the daemon after local runtime discovery. Includes
     # per-runtime history/execution capability checks and selected binary paths.
     Column("runtime_capabilities", Text),
+    # JSON blob of MCP server configs managed via the platform API. Written by
+    # PUT /api/connectors/{id}/mcp-servers; never by the connector daemon.
+    Column("mcp_servers_json", Text),
 )
 
 
@@ -232,6 +235,9 @@ sessions = Table(
     Column("last_activity_at", Text),
     Column("context_usage_json", Text),
     Column("rate_limit_json", Text),
+    # JSON blob of session-level MCP server config overrides. Session servers
+    # take precedence over connector-level servers with the same name.
+    Column("mcp_servers_json", Text),
     Column("seq", Integer, nullable=False),
     Column("updated_seq", Integer, nullable=False),
     Column("created_at", Text, nullable=False),
