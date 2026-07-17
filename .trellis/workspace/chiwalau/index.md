@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 9
+- **Total Sessions**: 10
 - **Last Active**: 2026-07-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~305 | Active |
+| `journal-1.md` | ~338 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 10 | 2026-07-18 | feat: mcp.reconnect / mcp.toggleServer / context.usage RPCs | `09d9ff5` | `fix/android-sse-hang` |
 | 9 | 2026-07-18 | SDK gap analysis: 0.2.121 = pure bugfix, P1 gaps identified | - | `fix/android-sse-hang` |
 | 8 | 2026-07-18 | Server SDK upgrade to 0.2.121 (uv.lock gitignored, local-only) | - | `fix/android-sse-hang` |
 | 7 | 2026-07-18 | Web files panel: inline Monaco editor with write-back | `aea2b72` | `fix/android-sse-hang` |

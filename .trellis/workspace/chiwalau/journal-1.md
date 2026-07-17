@@ -303,3 +303,36 @@ Upgraded claude-agent-sdk in server (0.2.116→0.2.121) and connector (0.2.119�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: feat: mcp.reconnect / mcp.toggleServer / context.usage RPCs
+
+**Date**: 2026-07-18
+**Task**: feat: mcp.reconnect / mcp.toggleServer / context.usage RPCs
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+全栈实现三个 SDK 未接入 RPC：mcp.reconnect（失连重连）、mcp.toggleServer（运行时启停）、context.usage（主动查询 context 占用）。6 文件 295 行新增，connector 193 通过，server 220 通过，TS 零错误。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `09d9ff5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
