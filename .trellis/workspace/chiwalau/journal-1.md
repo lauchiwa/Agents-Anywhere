@@ -336,3 +336,36 @@ Upgraded claude-agent-sdk in server (0.2.116→0.2.121) and connector (0.2.119�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: feat: session.delete / session.fork RPCs
+
+**Date**: 2026-07-18
+**Task**: feat: session.delete / session.fork RPCs
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+全栈实现 session.delete（硬删除会话 JSONL）和 session.fork（派生新会话 UUID，支持 upToMessageId 和 title）。参照 rename_session 模式，6 文件 331 行。connector 201、server 220、TS 零错误。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fe156b8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
