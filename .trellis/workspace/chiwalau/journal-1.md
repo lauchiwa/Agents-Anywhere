@@ -241,3 +241,34 @@ Added right-click Edit to files panel — opens Monaco sheet, writes back via fs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Server SDK upgrade to 0.2.121 (uv.lock gitignored, local-only)
+
+**Date**: 2026-07-18
+**Task**: Server SDK upgrade to 0.2.121 (uv.lock gitignored, local-only)
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+Upgraded claude-agent-sdk in server (0.2.116→0.2.121) and connector (0.2.119→0.2.121) via uv lock --upgrade-package. Both test suites green (server 220, connector 190). uv.lock is gitignored so no code commit; upgrade is local-venv-only. Next: full SDK changelog exploration for new feature tasks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
