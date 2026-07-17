@@ -468,3 +468,36 @@ Implemented session.tag RPC across all layers: sdk_adapter.tag_session (supports
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: Web 端 Delete Session UI
+
+**Date**: 2026-07-18
+**Task**: Web 端 Delete Session UI
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+在 Web 会话侧边栏右键菜单新增删除会话功能：workspace-context 加 deleteSession（调用 api.deleteSession，乐观移除列表项，若删除当前活跃会话则导航回首页）；app-sidebar 加危险色 ContextMenu 菜单项 + AlertDialog 确认框（deleting 状态 disabled + Spinner）；i18n 加 delete/deleteConfirmTitle/deleteConfirmDesc/deleteFailed 键。TypeScript 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a0cc01c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
