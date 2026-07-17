@@ -1944,13 +1944,48 @@ def _blocks_to_dicts(content: Any) -> list[dict[str, Any]]:
                 }
             )
         elif block_type == "tool_result":
+            content = _extract_attr(block, "content")
+            # Log any image blocks found inside tool_result content so we can
+            # learn the real data structure and implement image rendering later.
+            if isinstance(content, (list, tuple)):
+                for sub in content:
+                    sub_type = _optional_string(_extract_attr(sub, "type"))
+                    if sub_type == "image":
+                        import json as _json
+                        try:
+                            raw = _json.dumps(
+                                sub if isinstance(sub, dict) else vars(sub),
+                                default=str,
+                            )
+                        except Exception:
+                            raw = repr(sub)
+                        logger.warning(
+                            "[image-capture] image block found inside tool_result.content — "
+                            "raw structure for 07-15 implementation: {}",
+                            raw,
+                        )
             blocks.append(
                 {
                     "type": "tool_result",
                     "tool_use_id": _optional_string(_extract_attr(block, "tool_use_id", "toolUseId")) or "",
-                    "content": _extract_attr(block, "content"),
+                    "content": content,
                     "is_error": _extract_attr(block, "is_error", "isError"),
                 }
+            )
+        elif block_type == "image":
+            # Top-level image block in assistant content (rare but possible).
+            import json as _json
+            try:
+                raw = _json.dumps(
+                    block if isinstance(block, dict) else vars(block),
+                    default=str,
+                )
+            except Exception:
+                raw = repr(block)
+            logger.warning(
+                "[image-capture] top-level image block in content — "
+                "raw structure for 07-15 implementation: {}",
+                raw,
             )
     return blocks
 
