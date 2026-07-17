@@ -567,3 +567,36 @@ Implemented session.tag RPC across all layers: sdk_adapter.tag_session (supports
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: Connector 图片 block 捕获日志
+
+**Date**: 2026-07-18
+**Task**: Connector 图片 block 捕获日志
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+在 _blocks_to_dicts 的 tool_result.content 子块扫描和顶层 image block 分支各加 WARNING 日志，JSON 序列化原始 block 结构，用于解阻塞 07-15-connector-render-output-images。下次触发带图片工具调用时可从 connector 日志中取到数据结构。211 connector 测试全通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d726100` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
