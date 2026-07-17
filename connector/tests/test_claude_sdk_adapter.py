@@ -2330,3 +2330,71 @@ async def test_fork_session_rpc_missing_sdk_method():
     assert result["ok"] is False
     assert "fork_session" in result.get("reason", "")
 
+
+@pytest.mark.anyio
+async def test_exit_plan_mode_approval_sets_pending_permission_mode():
+    """Approving ExitPlanMode sets pending_permission_mode from input_data."""
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=FakeSdk)
+    runtime = adapter._runtime_for(
+        "sess_plan",
+        {"sessionId": "sess_plan", "externalSessionId": "claude_plan"},
+    )
+    runtime.active_turn_id = "turn_plan"
+
+    task = asyncio.create_task(
+        adapter._can_use_tool(
+            "ExitPlanMode",
+            {"permissionMode": "acceptEdits"},
+            {"session_id": "claude_plan"},
+        )
+    )
+    await asyncio.sleep(0)
+
+    approvals = [params for method, params in notifications if method == "approval.requested"]
+    assert len(approvals) == 1
+    await adapter.resolve_approval(
+        {"sessionId": "sess_plan", "approvalId": approvals[0]["id"], "status": "approved"}
+    )
+    await task
+
+    assert runtime.pending_permission_mode == "acceptEdits"
+
+
+@pytest.mark.anyio
+async def test_exit_plan_mode_fallback_to_accept_edits():
+    """ExitPlanMode without permissionMode in input falls back to 'acceptEdits'."""
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=FakeSdk)
+    runtime = adapter._runtime_for(
+        "sess_plan_fb",
+        {"sessionId": "sess_plan_fb", "externalSessionId": "claude_plan_fb"},
+    )
+    runtime.active_turn_id = "turn_plan_fb"
+
+    task = asyncio.create_task(
+        adapter._can_use_tool(
+            "ExitPlanMode",
+            {},  # no permissionMode field
+            {"session_id": "claude_plan_fb"},
+        )
+    )
+    await asyncio.sleep(0)
+
+    approvals = [params for method, params in notifications if method == "approval.requested"]
+    assert len(approvals) == 1
+    await adapter.resolve_approval(
+        {"sessionId": "sess_plan_fb", "approvalId": approvals[0]["id"], "status": "approved"}
+    )
+    await task
+
+    assert runtime.pending_permission_mode == "acceptEdits"
+

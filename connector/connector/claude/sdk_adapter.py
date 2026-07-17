@@ -1226,6 +1226,14 @@ class ClaudeSdkAdapter:
                 # so identical calls auto-allow. Cleared with the runtime on a new
                 # session / restart, so stale grants never leak across sessions.
                 runtime.session_approved_rules.add(rule_key)
+            if tool_name == "ExitPlanMode":
+                # ExitPlanMode carries the target permissionMode to switch to after
+                # the plan turn ends (e.g. "acceptEdits"). Store it so the next
+                # session.updated notification carries permissionMode and the server
+                # persists it as the override — ensuring subsequent turns run in
+                # execute mode rather than re-entering plan.
+                exit_mode = _optional_string(input_data.get("permissionMode"))
+                runtime.pending_permission_mode = exit_mode or "acceptEdits"
             resolved_input = input_data
             if pending is not None and pending.answers:
                 # AskUserQuestion: merge the user's selections into the tool input
