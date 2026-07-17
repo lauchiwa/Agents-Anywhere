@@ -272,3 +272,34 @@ Upgraded claude-agent-sdk in server (0.2.116→0.2.121) and connector (0.2.119�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: SDK gap analysis: 0.2.121 = pure bugfix, P1 gaps identified
+
+**Date**: 2026-07-18
+**Task**: SDK gap analysis: 0.2.121 = pure bugfix, P1 gaps identified
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+0.2.119→0.2.121 无新 Python API（纯安全修复）。盘出 P1 未接入项：mcp.reconnect、mcp.toggleServer、context.usage 主动 RPC，三者均参照 stop_task 模式，实现简单。P2：session.delete、session.fork。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
