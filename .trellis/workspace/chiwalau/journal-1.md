@@ -369,3 +369,36 @@ Upgraded claude-agent-sdk in server (0.2.116→0.2.121) and connector (0.2.119�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: fix: Plan Mode exit — ExitPlanMode approval now sets pending_permission_mode
+
+**Date**: 2026-07-18
+**Task**: fix: Plan Mode exit — ExitPlanMode approval now sets pending_permission_mode
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+修复 Plan Mode 永久卡死 bug：_can_use_tool 在批准 ExitPlanMode 时写 runtime.pending_permission_mode，下次 session.updated 携带 permissionMode，服务端持久化到 override。connector 203 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9c32872` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

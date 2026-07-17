@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
+- **Total Sessions**: 12
 - **Last Active**: 2026-07-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~371 | Active |
+| `journal-1.md` | ~404 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-07-18 | fix: Plan Mode exit — ExitPlanMode approval now sets pending_permission_mode | `9c32872` | `fix/android-sse-hang` |
 | 11 | 2026-07-18 | feat: session.delete / session.fork RPCs | `fe156b8` | `fix/android-sse-hang` |
 | 10 | 2026-07-18 | feat: mcp.reconnect / mcp.toggleServer / context.usage RPCs | `09d9ff5` | `fix/android-sse-hang` |
 | 9 | 2026-07-18 | SDK gap analysis: 0.2.121 = pure bugfix, P1 gaps identified | - | `fix/android-sse-hang` |
