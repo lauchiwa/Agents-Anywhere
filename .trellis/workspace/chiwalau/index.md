@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 6
-- **Last Active**: 2026-07-17
+- **Total Sessions**: 7
+- **Last Active**: 2026-07-18
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~210 | Active |
+| `journal-1.md` | ~243 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 7 | 2026-07-18 | Web files panel: inline Monaco editor with write-back | `aea2b72` | `fix/android-sse-hang` |
 | 6 | 2026-07-17 | Runtime 控制增强：1M betas fix + auto 模式 + stop_task + 生产部署修复 + 桌面版打包 | `85f72b8` | `fix/android-sse-hang` |
 | 5 | 2026-07-17 | 全项目功能审查与 P1 修复 | `15e6730`, `e2db6e0` | `fix/android-sse-hang` |
 | 4 | 2026-07-17 | Archive bootstrap-guidelines spec task | `dd1215f` | `fix/android-sse-hang` |

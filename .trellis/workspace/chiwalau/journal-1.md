@@ -208,3 +208,36 @@ Verified all spec files (backend/frontend/connector) are populated with real cod
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Web files panel: inline Monaco editor with write-back
+
+**Date**: 2026-07-18
+**Task**: Web files panel: inline Monaco editor with write-back
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+Added right-click Edit to files panel — opens Monaco sheet, writes back via fs.writeFile RPC with sha256 ifMatch optimistic lock, conflict confirm dialog, Cmd+S shortcut, binary guard, saved flash. TSC clean.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `aea2b72` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
