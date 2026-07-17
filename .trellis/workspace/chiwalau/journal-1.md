@@ -435,3 +435,36 @@ Implemented session.tag RPC across all layers: sdk_adapter.tag_session (supports
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: Web 端 Fork Session UI
+
+**Date**: 2026-07-18
+**Task**: Web 端 Fork Session UI
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+在 Web 会话侧边栏右键菜单新增 Fork 会话入口：workspace-context 加 forkSession（调用 api.forkSession，成功后导航到新 session）；app-sidebar ContextMenu 加 Fork 菜单项（forking 状态 disabled）；demo-api.ts / mapSession 补 externalSessionId 字段；en.json / zh-CN.json 加 fork / forking / forkFailed i18n 键。TypeScript 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a04f608` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
