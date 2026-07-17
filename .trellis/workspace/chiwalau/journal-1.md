@@ -175,3 +175,36 @@ Verified all spec files (backend/frontend/connector) are populated with real cod
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Runtime 控制增强：1M betas fix + auto 模式 + stop_task + 生产部署修复 + 桌面版打包
+
+**Date**: 2026-07-17
+**Task**: Runtime 控制增强：1M betas fix + auto 模式 + stop_task + 生产部署修复 + 桌面版打包
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+修复 [1M] model 后缀不注入 betas 的 bug；暴露 auto/dontAsk 权限模式到客户端；新增 stop_task RPC 全链（连接器→服务端 API→Web 子代理卡停止按钮）。另修复生产 Docker 镜像误打包博客前端（--no-cache 重建），成功构建 Windows EXE 和 macOS DMG Connector 桌面安装包，推送 46 个提交到 fork 分支。连接器 190 / 服务端 220 passed。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `85f72b8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
