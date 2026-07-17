@@ -103,8 +103,10 @@ DEFAULT_RUNTIME_CONFIG_SCHEMAS: dict[str, RuntimeConfigSchema] = {
                 options=[
                     RuntimeConfigOption(value="default", label="Ask permissions"),
                     RuntimeConfigOption(value="acceptEdits", label="Accept edits"),
+                    RuntimeConfigOption(value="auto", label="Auto approve", description="Model classifier auto-approves safe tool calls"),
                     RuntimeConfigOption(value="plan", label="Plan mode"),
                     RuntimeConfigOption(value="bypassPermissions", label="Bypass permissions"),
+                    RuntimeConfigOption(value="dontAsk", label="Don't ask", description="Reject all unapproved tools without prompting"),
                 ],
             ),
             RuntimeConfigField(

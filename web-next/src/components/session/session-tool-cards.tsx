@@ -73,7 +73,7 @@ export function ToolCard({
             <ChevronDown className="size-3.5 shrink-0 -rotate-90 transition-transform group-data-[state=open]:rotate-0" />
             <ToolIcon kind={kind} status={item.status} />
             <span className="code-mono min-w-0 flex-1 truncate text-sm">{title}</span>
-            <SubagentProgressBadge item={item} />
+            <SubagentProgressBadge item={item} token={token} sessionId={session.id} />
             <TimelineStatusBadge status={item.status} />
           </button>
         </CollapsibleTrigger>
@@ -472,8 +472,17 @@ function numberOf(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null
 }
 
-export function SubagentProgressBadge({ item }: { item: TimelineItem }) {
+export function SubagentProgressBadge({
+  item,
+  token,
+  sessionId,
+}: {
+  item: TimelineItem
+  token?: string
+  sessionId?: string
+}) {
   const tSession = useTranslations("dashboard.session")
+  const [stopping, setStopping] = React.useState(false)
   const subagent = subagentProgressOf(item)
   if (!subagent) return null
 
@@ -494,10 +503,33 @@ export function SubagentProgressBadge({ item }: { item: TimelineItem }) {
     : tSession("subagentRunning")
   if (!label) return null
 
+  const taskId = typeof subagent.taskId === "string" ? subagent.taskId : null
+  const canStop = !finished && !stopping && !!token && !!sessionId && !!taskId
+
+  const handleStop = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!canStop) return
+    setStopping(true)
+    try {
+      await dashboardApi.stopTask(token!, sessionId!, taskId!)
+    } finally {
+      setStopping(false)
+    }
+  }
+
   return (
     <Badge variant="outline" className="h-5 gap-1 text-[11px] font-normal">
       {!finished ? <Loader2 className="size-3 animate-spin" /> : null}
       {label}
+      {canStop && (
+        <button
+          onClick={handleStop}
+          className="ml-0.5 rounded text-[10px] text-muted-foreground hover:text-destructive"
+          title={tSession("subagentStop")}
+        >
+          ✕
+        </button>
+      )}
     </Badge>
   )
 }

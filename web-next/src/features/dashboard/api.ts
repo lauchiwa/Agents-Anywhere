@@ -521,6 +521,14 @@ export class DashboardApi {
     );
   }
 
+  stopTask(token: string, sessionId: string, taskId: string): Promise<RpcResponse<unknown>> {
+    return this.client.post<RpcResponse<unknown>>(
+      `/sessions/${encodeURIComponent(sessionId)}/task/stop`,
+      { taskId },
+      { token },
+    );
+  }
+
   resolveApproval(
     token: string,
     approvalId: string,

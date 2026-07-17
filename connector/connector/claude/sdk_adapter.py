@@ -270,6 +270,29 @@ class ClaudeSdkAdapter:
             allow_none=False,
         )
 
+    async def stop_task(self, params: dict[str, Any]) -> dict[str, Any]:
+        session_id = _required(params, "sessionId")
+        task_id = _optional_string(params.get("taskId"))
+        if not task_id:
+            return {"ok": False, "reason": "taskId is required"}
+        runtime = self._sessions.get(session_id)
+        if runtime is None:
+            return {"ok": False, "reason": "session not registered"}
+        client = runtime.client
+        if client is None:
+            return {"ok": False, "reason": "no active Claude SDK client"}
+        try:
+            await client.stop_task(task_id)
+        except Exception as exc:
+            logger.debug(
+                "stop_task failed session_id={} task_id={}",
+                session_id,
+                task_id,
+                exc_info=True,
+            )
+            return {"ok": False, "reason": str(exc) or "stop_task failed"}
+        return {"ok": True}
+
     async def _apply_runtime_setting(
         self,
         params: dict[str, Any],
@@ -993,12 +1016,19 @@ class ClaudeSdkAdapter:
             kwargs["cli_path"] = self.claude_target.path
         for param_key, option_key in (
             ("permissionMode", "permission_mode"),
-            ("model", "model"),
             ("effort", "effort"),
         ):
             value = _optional_string(params.get(param_key))
             if value:
                 kwargs[option_key] = value
+        model = _optional_string(params.get("model"))
+        if model:
+            # [1M] suffix signals the 1M-context beta; strip it and inject betas.
+            if model.endswith("[1M]"):
+                kwargs["model"] = model[:-4]
+                kwargs["betas"] = ["context-1m-2025-08-07"]
+            else:
+                kwargs["model"] = model
         max_turns = _positive_int(params.get("maxTurns"))
         if max_turns is not None:
             kwargs["max_turns"] = max_turns

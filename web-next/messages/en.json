@@ -649,6 +649,7 @@
       "toolResults": "Tool results",
       "toolResultsLines": "{count} lines",
       "subagentRunning": "Sub-agent running",
+      "subagentStop": "Stop sub-agent",
       "subagentTokens": "{tokens} tokens",
       "subagentToolUses": "{count} tool uses",
       "subagentDuration": "{seconds}s",

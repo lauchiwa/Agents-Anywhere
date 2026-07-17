@@ -38,6 +38,11 @@ from agent_server.services.connector_presence import with_effective_session_conn
 from agent_server.services.dashboard_events import publish_dashboard_changed
 from agent_server.infra.repositories.facade import Store
 from agent_server.core.utc import utc_now
+from pydantic import BaseModel
+
+
+class StopTaskRequest(BaseModel):
+    taskId: str
 
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -491,6 +496,19 @@ async def interrupt_session(
 ) -> RpcResponsePayload:
     try:
         return await run_service.interrupt_session(session_id, user_id=user_id)
+    except SessionRunError as exc:
+        _raise_session_run_error(exc)
+
+
+@router.post("/{session_id}/task/stop", response_model=RpcResponsePayload)
+async def stop_task(
+    session_id: str,
+    body: StopTaskRequest,
+    user_id: str = Depends(current_user_id),
+    run_service: SessionRunService = Depends(get_session_run_service),
+) -> RpcResponsePayload:
+    try:
+        return await run_service.stop_task_in_session(session_id, body.taskId, user_id=user_id)
     except SessionRunError as exc:
         _raise_session_run_error(exc)
 

@@ -355,6 +355,8 @@ class BackendRpcClient:
             )
         if method == "turn.interrupt":
             return await self._resolve_adapter(params).interrupt_turn(params)
+        if method == "task.stop":
+            return await self._resolve_adapter(params).stop_task(params)
         if method == "approval.resolve":
             return await self._resolve_adapter(params).resolve_approval(params)
         if method in ("runtime.setModel", "runtime.setPermissionMode"):

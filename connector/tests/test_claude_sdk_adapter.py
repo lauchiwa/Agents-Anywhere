@@ -2022,3 +2022,76 @@ async def test_claude_sdk_adapter_rename_session_sdk_raises():
 
     assert result["ok"] is False
     assert result.get("reason")
+
+
+@pytest.mark.anyio
+async def test_1m_model_suffix_strips_suffix_and_injects_betas():
+    """[1M] suffix is stripped and betas injected; plain model passes through unchanged."""
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        pass
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=FakeSdk, history_adapter=RecordingHistoryAdapter())
+
+    # [1M] variant — suffix stripped, betas injected
+    FakeClient.instances = []
+    await adapter.start_turn(
+        {"sessionId": "s1", "externalSessionId": "ext1", "content": "hi", "model": "claude-opus-4-8[1M]"}
+    )
+    # yield to let _drive_turn background task run until FakeClient is constructed
+    for _ in range(10):
+        await asyncio.sleep(0)
+    assert FakeClient.instances, "FakeClient was not instantiated"
+    opts = FakeClient.instances[-1].options
+    assert opts.kwargs.get("model") == "claude-opus-4-8"
+    assert "context-1m-2025-08-07" in (opts.kwargs.get("betas") or [])
+
+    # plain model — no betas
+    FakeClient.instances = []
+    await adapter.start_turn(
+        {"sessionId": "s2", "externalSessionId": "ext2", "content": "hi", "model": "claude-opus-4-8"}
+    )
+    for _ in range(10):
+        await asyncio.sleep(0)
+    assert FakeClient.instances
+    opts_plain = FakeClient.instances[-1].options
+    assert opts_plain.kwargs.get("model") == "claude-opus-4-8"
+    assert not opts_plain.kwargs.get("betas")
+
+
+@pytest.mark.anyio
+async def test_stop_task_rpc_calls_client_stop_task():
+    """stop_task delegates to client.stop_task and returns ok:True."""
+    stopped: list[str] = []
+
+    class StopCapturingClient(FakeClient):
+        async def stop_task(self, task_id: str) -> None:  # type: ignore[override]
+            stopped.append(task_id)
+
+    class StopSdk(FakeSdk):
+        ClaudeSDKClient = StopCapturingClient
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        pass
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=StopSdk, history_adapter=RecordingHistoryAdapter())
+    await adapter.start_turn({"sessionId": "s1", "externalSessionId": "ext1", "content": "hi"})
+    # wait for _drive_turn background task to connect the client
+    for _ in range(20):
+        await asyncio.sleep(0)
+
+    result = await adapter.stop_task({"sessionId": "s1", "taskId": "task-abc"})
+    assert result == {"ok": True}
+    assert stopped == ["task-abc"]
+
+
+@pytest.mark.anyio
+async def test_stop_task_no_active_client_returns_degraded():
+    """stop_task returns ok:False when there is no active SDK client."""
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        pass
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=FakeSdk)
+    result = await adapter.stop_task({"sessionId": "s_unknown", "taskId": "task-xyz"})
+    assert result["ok"] is False
+    assert result.get("reason")

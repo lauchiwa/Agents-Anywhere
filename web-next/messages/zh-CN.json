@@ -649,6 +649,7 @@
       "toolResults": "工具结果",
       "toolResultsLines": "{count} 行",
       "subagentRunning": "子代理运行中",
+      "subagentStop": "停止子代理",
       "subagentTokens": "{tokens} tokens",
       "subagentToolUses": "{count} 次工具调用",
       "subagentDuration": "{seconds} 秒",
