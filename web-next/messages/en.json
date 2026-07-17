@@ -496,7 +496,12 @@
         "pathAddedToComposer": "Path added to Composer",
         "pathCopied": "Path copied",
         "binaryUnavailable": "Binary file ({size} bytes). Preview unavailable.",
-        "truncated": "truncated"
+        "truncated": "truncated",
+        "edit": "Edit",
+        "fileSave": "Save",
+        "fileSaving": "Saving...",
+        "fileSaved": "Saved",
+        "fileConflict": "The file was modified on the device. Overwrite anyway?"
       },
       "terminal": {
         "title": "Shell",
@@ -871,7 +876,7 @@
   "pages": {
     "settings": {
       "title": "Settings",
-      "description": "Account access and preferences for this browser.",
+      "description": "Description",
       "account": "Account",
       "agent": "Agent settings",
       "appearance": "Appearance",
@@ -918,7 +923,6 @@
       "editModel": "Edit model",
       "modelId": "Model ID",
       "displayName": "Display name",
-      "description": "Description",
       "noModels": "No models yet.",
       "reasoningEffort": "Reasoning effort",
       "defaultEffort": "Default effort",

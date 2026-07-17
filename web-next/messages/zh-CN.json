@@ -496,7 +496,12 @@
         "pathAddedToComposer": "已添加到 Composer",
         "pathCopied": "已复制路径",
         "binaryUnavailable": "二进制文件（{size} 字节），无法预览。",
-        "truncated": "已截断"
+        "truncated": "已截断",
+        "edit": "编辑",
+        "fileSave": "保存",
+        "fileSaving": "保存中...",
+        "fileSaved": "已保存",
+        "fileConflict": "文件已在设备上被修改，是否强制覆盖？"
       },
       "terminal": {
         "title": "Shell",
@@ -871,7 +876,7 @@
   "pages": {
     "settings": {
       "title": "设置",
-      "description": "此浏览器的账号访问和偏好设置。",
+      "description": "描述",
       "account": "账号",
       "agent": "Agent 设置",
       "appearance": "外观",
@@ -918,7 +923,6 @@
       "editModel": "编辑模型",
       "modelId": "模型 ID",
       "displayName": "显示名称",
-      "description": "描述",
       "noModels": "暂无模型。",
       "reasoningEffort": "推理强度",
       "defaultEffort": "默认推理强度",

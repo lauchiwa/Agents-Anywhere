@@ -1,11 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { ChevronRight, ChevronUp, Copy, Download, File, Folder, FolderOpen, MessageSquarePlus, RefreshCw, X } from "lucide-react"
+import { ChevronRight, ChevronUp, Copy, Download, File, Folder, FolderOpen, MessageSquarePlus, Pencil, RefreshCw, X } from "lucide-react"
 import { toast } from "sonner"
 
 import "./runtime-panel.css"
 import { ChevronExternal } from "./runtime-icons"
+import { MonacoCodeView } from "@/components/monaco-code-view"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -17,14 +18,22 @@ import {
 } from "@/components/ui/context-menu"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useWorkspace } from "@/components/workspace-context"
 import { dashboardApi } from "@/features/dashboard/api"
 import type { FsEntry } from "@/features/dashboard/types"
 import { localeFromPathname, readStoredLocale } from "@/i18n/client-locale"
+import { isApiError } from "@/lib/api/errors"
 import { copyText } from "@/lib/clipboard"
 import { downloadBlob } from "@/lib/download"
 import { cn } from "@/lib/utils"
 import { useTranslations } from "next-intl"
+
+type EditState = {
+  path: string
+  content: string
+  sha256: string
+}
 
 export type PickedFile = {
   name: string
@@ -59,6 +68,11 @@ export function FilesPanelBody({
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [contextEntry, setContextEntry] = React.useState<FsEntry | null>(null)
+  const [editState, setEditState] = React.useState<EditState | null>(null)
+  const [editValue, setEditValue] = React.useState("")
+  const [editDirty, setEditDirty] = React.useState(false)
+  const [saving, setSaving] = React.useState(false)
+  const [savedFlash, setSavedFlash] = React.useState(false)
 
   const canLoad = Boolean(token && connectorId)
   const isWindowsConnector = connectorDeviceOs === "windows"
@@ -161,6 +175,51 @@ export function FilesPanelBody({
       downloadBlob(blob, response.result.name || contextEntry.name)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("downloadFailed"))
+    }
+  }
+
+  const openEditor = async (entry: FsEntry) => {
+    if (!token || !connectorId) return
+    try {
+      const result = await dashboardApi.connectorFsReadText(token, connectorId, effectiveRoot, entry.path, 2 * 1024 * 1024)
+      if (result.binary) {
+        toast.error(t("binaryUnavailable", { size: formatBytes(result.size) }))
+        return
+      }
+      setEditState({ path: entry.path, content: result.content, sha256: result.sha256 })
+      setEditValue(result.content)
+      setEditDirty(false)
+      setSavedFlash(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("downloadFailed"))
+    }
+  }
+
+  const handleSave = async (force: boolean) => {
+    if (!editState || !token || !connectorId) return
+    setSaving(true)
+    try {
+      const res = await dashboardApi.connectorFsWrite(token, connectorId, effectiveRoot, {
+        path: editState.path,
+        content: editValue,
+        ifMatch: force ? undefined : editState.sha256,
+      })
+      setEditState((prev) => prev ? { ...prev, sha256: res.result?.sha256 ?? prev.sha256 } : prev)
+      setEditDirty(false)
+      setSavedFlash(true)
+      window.setTimeout(() => setSavedFlash(false), 2000)
+    } catch (err) {
+      if (isApiError(err) && err.status === 409) {
+        if (window.confirm(t("fileConflict"))) {
+          setSaving(false)
+          await handleSave(true)
+          return
+        }
+      } else {
+        toast.error(err instanceof Error ? err.message : String(err))
+      }
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -309,9 +368,49 @@ export function FilesPanelBody({
               <Download className="size-4" />
               {t("download")}
             </ContextMenuItem>
+            <ContextMenuItem onSelect={() => contextEntry && void openEditor(contextEntry)} disabled={!contextIsFile || !canLoad}>
+              <Pencil className="size-4" />
+              {t("edit")}
+            </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
       </CardContent>
+
+      <Sheet open={!!editState} onOpenChange={(open) => !open && setEditState(null)}>
+        <SheetContent
+          side="right"
+          className="flex w-[80vw] max-w-[900px] flex-col gap-0 p-0 sm:max-w-[900px]"
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+              e.preventDefault()
+              if (editDirty && !saving) void handleSave(false)
+            }
+          }}
+        >
+          <SheetHeader className="border-b px-4 py-3">
+            <SheetTitle className="truncate text-sm font-mono">{editState?.path ?? ""}</SheetTitle>
+          </SheetHeader>
+          <div className="min-h-0 flex-1">
+            <MonacoCodeView
+              content={editValue}
+              fileName={editState?.path ?? ""}
+              editable
+              onChange={(v) => { setEditValue(v); setEditDirty(true) }}
+              className="h-full"
+            />
+          </div>
+          <div className="flex items-center justify-end gap-3 border-t px-4 py-2">
+            {savedFlash && <span className="text-xs text-green-600">{t("fileSaved")}</span>}
+            <Button
+              size="sm"
+              disabled={!editDirty || saving}
+              onClick={() => void handleSave(false)}
+            >
+              {saving ? t("fileSaving") : t("fileSave")}
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </Card>
   )
 }
