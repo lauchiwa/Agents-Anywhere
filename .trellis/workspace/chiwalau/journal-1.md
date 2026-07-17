@@ -501,3 +501,36 @@ Implemented session.tag RPC across all layers: sdk_adapter.tag_session (supports
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: Web 端 Set Tag UI
+
+**Date**: 2026-07-18
+**Task**: Web 端 Set Tag UI
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+在 Web 会话侧边栏右键菜单新增设置标签功能：workspace-context 加 tagSession（调用 api.tagSession，乐观更新本地 tag 字段；空字符串传 null 清除）；sidebar item 显示 tag badge；ContextMenu 加 Set Tag 菜单项 + 预填当前 tag 的 Dialog 输入框；demo-api.ts SessionView 补 tag 字段；i18n 加 setTag/tagPlaceholder/tagFailed 键。TypeScript 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e89e990` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
