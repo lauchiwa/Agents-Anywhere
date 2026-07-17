@@ -402,3 +402,36 @@ Upgraded claude-agent-sdk in server (0.2.116â†’0.2.121) and connector (0.2.119â†
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: session.tag RPC end-to-end implementation
+
+**Date**: 2026-07-18
+**Task**: session.tag RPC end-to-end implementation
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+Implemented session.tag RPC across all layers: sdk_adapter.tag_session (supports tag=None to clear), runtime dispatch, server service/API endpoint, web api.ts tagSession. Added 5 connector unit tests covering set, clear, without-cwd, missing-external-id, and missing-sdk-method cases. All 207 connector + 220 server tests pass, TypeScript clean.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `85c5946` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
