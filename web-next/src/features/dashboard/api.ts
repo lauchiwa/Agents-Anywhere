@@ -529,6 +529,29 @@ export class DashboardApi {
     );
   }
 
+  mcpReconnect(token: string, sessionId: string, serverName: string): Promise<RpcResponse<unknown>> {
+    return this.client.post<RpcResponse<unknown>>(
+      `/sessions/${encodeURIComponent(sessionId)}/mcp/reconnect`,
+      { serverName },
+      { token },
+    );
+  }
+
+  mcpToggleServer(token: string, sessionId: string, serverName: string, enabled: boolean): Promise<RpcResponse<unknown>> {
+    return this.client.post<RpcResponse<unknown>>(
+      `/sessions/${encodeURIComponent(sessionId)}/mcp/toggle`,
+      { serverName, enabled },
+      { token },
+    );
+  }
+
+  getContextUsage(token: string, sessionId: string): Promise<RpcResponse<unknown>> {
+    return this.client.get<RpcResponse<unknown>>(
+      `/sessions/${encodeURIComponent(sessionId)}/context/usage`,
+      { token },
+    );
+  }
+
   resolveApproval(
     token: string,
     approvalId: string,

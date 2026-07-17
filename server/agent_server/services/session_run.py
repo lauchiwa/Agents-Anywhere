@@ -371,6 +371,78 @@ class SessionRunService:
             raise SessionRunUpstreamError(exc.message or exc.code) from exc
         return RpcResponsePayload(ok=True, result=result)
 
+    async def reconnect_mcp_server_in_session(
+        self,
+        session_id: str,
+        server_name: str,
+        *,
+        user_id: str,
+    ) -> RpcResponsePayload:
+        try:
+            session = await self._store.get_session(session_id, user_id=user_id)
+        except KeyError:
+            raise SessionRunNotFoundError("session not found") from None
+        params: dict[str, Any] = {
+            "sessionId": session_id,
+            "runtime": session.runtime,
+            "serverName": server_name,
+        }
+        try:
+            result = await self._manager.request(session.connectorId, "mcp.reconnect", params)
+        except ConnectorOfflineError as exc:
+            raise SessionRunConflictError(str(exc)) from exc
+        except ConnectorRpcError as exc:
+            raise SessionRunUpstreamError(exc.message or exc.code) from exc
+        return RpcResponsePayload(ok=True, result=result)
+
+    async def toggle_mcp_server_in_session(
+        self,
+        session_id: str,
+        server_name: str,
+        enabled: bool,
+        *,
+        user_id: str,
+    ) -> RpcResponsePayload:
+        try:
+            session = await self._store.get_session(session_id, user_id=user_id)
+        except KeyError:
+            raise SessionRunNotFoundError("session not found") from None
+        params: dict[str, Any] = {
+            "sessionId": session_id,
+            "runtime": session.runtime,
+            "serverName": server_name,
+            "enabled": enabled,
+        }
+        try:
+            result = await self._manager.request(session.connectorId, "mcp.toggleServer", params)
+        except ConnectorOfflineError as exc:
+            raise SessionRunConflictError(str(exc)) from exc
+        except ConnectorRpcError as exc:
+            raise SessionRunUpstreamError(exc.message or exc.code) from exc
+        return RpcResponsePayload(ok=True, result=result)
+
+    async def get_context_usage_in_session(
+        self,
+        session_id: str,
+        *,
+        user_id: str,
+    ) -> RpcResponsePayload:
+        try:
+            session = await self._store.get_session(session_id, user_id=user_id)
+        except KeyError:
+            raise SessionRunNotFoundError("session not found") from None
+        params: dict[str, Any] = {
+            "sessionId": session_id,
+            "runtime": session.runtime,
+        }
+        try:
+            result = await self._manager.request(session.connectorId, "context.usage", params)
+        except ConnectorOfflineError as exc:
+            raise SessionRunConflictError(str(exc)) from exc
+        except ConnectorRpcError as exc:
+            raise SessionRunUpstreamError(exc.message or exc.code) from exc
+        return RpcResponsePayload(ok=True, result=result)
+
     async def apply_live_runtime_switch(
         self,
         session_id: str,

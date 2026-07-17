@@ -45,6 +45,15 @@ class StopTaskRequest(BaseModel):
     taskId: str
 
 
+class McpReconnectRequest(BaseModel):
+    serverName: str
+
+
+class McpToggleServerRequest(BaseModel):
+    serverName: str
+    enabled: bool
+
+
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
@@ -509,6 +518,44 @@ async def stop_task(
 ) -> RpcResponsePayload:
     try:
         return await run_service.stop_task_in_session(session_id, body.taskId, user_id=user_id)
+    except SessionRunError as exc:
+        _raise_session_run_error(exc)
+
+
+@router.post("/{session_id}/mcp/reconnect", response_model=RpcResponsePayload)
+async def reconnect_mcp_server(
+    session_id: str,
+    body: McpReconnectRequest,
+    user_id: str = Depends(current_user_id),
+    run_service: SessionRunService = Depends(get_session_run_service),
+) -> RpcResponsePayload:
+    try:
+        return await run_service.reconnect_mcp_server_in_session(session_id, body.serverName, user_id=user_id)
+    except SessionRunError as exc:
+        _raise_session_run_error(exc)
+
+
+@router.post("/{session_id}/mcp/toggle", response_model=RpcResponsePayload)
+async def toggle_mcp_server(
+    session_id: str,
+    body: McpToggleServerRequest,
+    user_id: str = Depends(current_user_id),
+    run_service: SessionRunService = Depends(get_session_run_service),
+) -> RpcResponsePayload:
+    try:
+        return await run_service.toggle_mcp_server_in_session(session_id, body.serverName, body.enabled, user_id=user_id)
+    except SessionRunError as exc:
+        _raise_session_run_error(exc)
+
+
+@router.get("/{session_id}/context/usage", response_model=RpcResponsePayload)
+async def get_context_usage(
+    session_id: str,
+    user_id: str = Depends(current_user_id),
+    run_service: SessionRunService = Depends(get_session_run_service),
+) -> RpcResponsePayload:
+    try:
+        return await run_service.get_context_usage_in_session(session_id, user_id=user_id)
     except SessionRunError as exc:
         _raise_session_run_error(exc)
 

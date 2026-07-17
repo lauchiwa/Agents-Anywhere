@@ -357,6 +357,12 @@ class BackendRpcClient:
             return await self._resolve_adapter(params).interrupt_turn(params)
         if method == "task.stop":
             return await self._resolve_adapter(params).stop_task(params)
+        if method == "mcp.reconnect":
+            return await self._resolve_adapter(params).reconnect_mcp_server(params)
+        if method == "mcp.toggleServer":
+            return await self._resolve_adapter(params).toggle_mcp_server(params)
+        if method == "context.usage":
+            return await self._resolve_adapter(params).get_context_usage(params)
         if method == "approval.resolve":
             return await self._resolve_adapter(params).resolve_approval(params)
         if method in ("runtime.setModel", "runtime.setPermissionMode"):

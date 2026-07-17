@@ -293,6 +293,73 @@ class ClaudeSdkAdapter:
             return {"ok": False, "reason": str(exc) or "stop_task failed"}
         return {"ok": True}
 
+    async def reconnect_mcp_server(self, params: dict[str, Any]) -> dict[str, Any]:
+        session_id = _required(params, "sessionId")
+        server_name = _required(params, "serverName")
+        runtime = self._sessions.get(session_id)
+        if runtime is None:
+            return {"ok": False, "reason": "session not registered"}
+        client = runtime.client
+        if client is None:
+            return {"ok": False, "reason": "no active Claude SDK client"}
+        try:
+            await client.reconnect_mcp_server(server_name)
+        except Exception as exc:
+            logger.debug(
+                "reconnect_mcp_server failed session_id={} server_name={}",
+                session_id,
+                server_name,
+                exc_info=True,
+            )
+            return {"ok": False, "reason": str(exc) or "reconnect_mcp_server failed"}
+        return {"ok": True}
+
+    async def toggle_mcp_server(self, params: dict[str, Any]) -> dict[str, Any]:
+        session_id = _required(params, "sessionId")
+        server_name = _required(params, "serverName")
+        enabled = bool(params.get("enabled", True))
+        runtime = self._sessions.get(session_id)
+        if runtime is None:
+            return {"ok": False, "reason": "session not registered"}
+        client = runtime.client
+        if client is None:
+            return {"ok": False, "reason": "no active Claude SDK client"}
+        try:
+            await client.toggle_mcp_server(server_name, enabled)
+        except Exception as exc:
+            logger.debug(
+                "toggle_mcp_server failed session_id={} server_name={} enabled={}",
+                session_id,
+                server_name,
+                enabled,
+                exc_info=True,
+            )
+            return {"ok": False, "reason": str(exc) or "toggle_mcp_server failed"}
+        return {"ok": True}
+
+    async def get_context_usage(self, params: dict[str, Any]) -> dict[str, Any]:
+        session_id = _required(params, "sessionId")
+        runtime = self._sessions.get(session_id)
+        if runtime is None:
+            return {"ok": False, "reason": "session not registered"}
+        client = runtime.client
+        if client is None:
+            return {"ok": False, "reason": "no active Claude SDK client"}
+        getter = getattr(client, "get_context_usage", None)
+        if not callable(getter):
+            return {"ok": False, "reason": "get_context_usage not available"}
+        try:
+            raw = await getter()
+            usage = _context_usage_from_response(raw)
+            return {"ok": True, "usage": usage}
+        except Exception as exc:
+            logger.debug(
+                "get_context_usage failed session_id={}",
+                session_id,
+                exc_info=True,
+            )
+            return {"ok": False, "reason": str(exc) or "get_context_usage failed"}
+
     async def _apply_runtime_setting(
         self,
         params: dict[str, Any],

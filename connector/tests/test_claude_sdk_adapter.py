@@ -2095,3 +2095,83 @@ async def test_stop_task_no_active_client_returns_degraded():
     result = await adapter.stop_task({"sessionId": "s_unknown", "taskId": "task-xyz"})
     assert result["ok"] is False
     assert result.get("reason")
+
+
+@pytest.mark.anyio
+async def test_mcp_reconnect_rpc_calls_client_method():
+    """reconnect_mcp_server delegates to client.reconnect_mcp_server and returns ok:True."""
+    reconnected: list[str] = []
+
+    class McpReconnectClient(FakeClient):
+        async def reconnect_mcp_server(self, server_name: str) -> None:  # type: ignore[override]
+            reconnected.append(server_name)
+
+    class McpReconnectSdk(FakeSdk):
+        ClaudeSDKClient = McpReconnectClient
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        pass
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=McpReconnectSdk, history_adapter=RecordingHistoryAdapter())
+    await adapter.start_turn({"sessionId": "s1", "externalSessionId": "ext1", "content": "hi"})
+    for _ in range(20):
+        await asyncio.sleep(0)
+
+    result = await adapter.reconnect_mcp_server({"sessionId": "s1", "serverName": "my-server"})
+    assert result == {"ok": True}
+    assert reconnected == ["my-server"]
+
+
+@pytest.mark.anyio
+async def test_mcp_toggle_server_rpc_calls_client_method():
+    """toggle_mcp_server delegates to client.toggle_mcp_server and returns ok:True."""
+    toggled: list[tuple[str, bool]] = []
+
+    class McpToggleClient(FakeClient):
+        async def toggle_mcp_server(self, server_name: str, enabled: bool) -> None:  # type: ignore[override]
+            toggled.append((server_name, enabled))
+
+    class McpToggleSdk(FakeSdk):
+        ClaudeSDKClient = McpToggleClient
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        pass
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=McpToggleSdk, history_adapter=RecordingHistoryAdapter())
+    await adapter.start_turn({"sessionId": "s1", "externalSessionId": "ext1", "content": "hi"})
+    for _ in range(20):
+        await asyncio.sleep(0)
+
+    result = await adapter.toggle_mcp_server({"sessionId": "s1", "serverName": "my-server", "enabled": False})
+    assert result == {"ok": True}
+    assert toggled == [("my-server", False)]
+
+
+@pytest.mark.anyio
+async def test_context_usage_rpc_returns_usage():
+    """get_context_usage delegates to client.get_context_usage and returns ok:True with usage."""
+    fake_usage = {"totalTokens": 5000, "maxTokens": 200000, "percentage": 2.5}
+
+    class ContextUsageClient(FakeClient):
+        async def get_context_usage(self) -> dict[str, Any]:  # type: ignore[override]
+            return fake_usage
+
+    class ContextUsageSdk(FakeSdk):
+        ClaudeSDKClient = ContextUsageClient
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        pass
+
+    adapter = ClaudeSdkAdapter(notification_sink=sink, sdk_module=ContextUsageSdk, history_adapter=RecordingHistoryAdapter())
+    await adapter.start_turn({"sessionId": "s1", "externalSessionId": "ext1", "content": "hi"})
+    for _ in range(20):
+        await asyncio.sleep(0)
+
+    result = await adapter.get_context_usage({"sessionId": "s1"})
+    assert result["ok"] is True
+    assert "usage" in result
+    usage = result["usage"]
+    assert isinstance(usage, dict)
+    assert usage.get("totalTokens") == 5000
+    assert usage.get("maxTokens") == 200000
+
