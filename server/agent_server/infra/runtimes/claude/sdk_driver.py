@@ -43,6 +43,11 @@ class ClaudeSdkChatDriver:
             kwargs["model"] = params["model"]
         if isinstance(params.get("effort"), str) and params["effort"]:
             kwargs["effort"] = params["effort"]
+        if params.get("maxBudgetUsd") is not None:
+            try:
+                kwargs["max_budget_usd"] = float(params["maxBudgetUsd"])
+            except (TypeError, ValueError):
+                pass
         if self._permission_handler is not None:
             kwargs["can_use_tool"] = self._permission_handler
         return kwargs

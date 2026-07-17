@@ -2366,8 +2366,65 @@ async def test_exit_plan_mode_approval_sets_pending_permission_mode():
 
 
 # ---------------------------------------------------------------------------
-# session.tag RPC
+# max_budget_usd passthrough
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_max_budget_usd_passed_to_options():
+    """maxBudgetUsd in start_turn params is forwarded to ClaudeAgentOptions."""
+    FakeClient.instances = []
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+    await adapter.start_turn(
+        {"sessionId": "sess_budget", "cwd": "/repo", "content": "hi", "maxBudgetUsd": 1.5}
+    )
+    await adapter._sessions["sess_budget"].active_task
+
+    client = FakeClient.instances[-1]
+    assert client.options.kwargs["max_budget_usd"] == 1.5
+
+
+@pytest.mark.anyio
+async def test_max_budget_usd_not_set_when_omitted():
+    """When maxBudgetUsd is not provided, max_budget_usd is absent from options."""
+    FakeClient.instances = []
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+    await adapter.start_turn(
+        {"sessionId": "sess_no_budget", "cwd": "/repo", "content": "hi"}
+    )
+    await adapter._sessions["sess_no_budget"].active_task
+
+    client = FakeClient.instances[-1]
+    assert "max_budget_usd" not in client.options.kwargs
+
+
+@pytest.mark.anyio
+async def test_max_budget_usd_accepts_string_float():
+    """maxBudgetUsd as a string is coerced to float (JSON transport compatibility)."""
+    FakeClient.instances = []
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+    await adapter.start_turn(
+        {"sessionId": "sess_budget_str", "cwd": "/repo", "content": "hi", "maxBudgetUsd": "2.0"}
+    )
+    await adapter._sessions["sess_budget_str"].active_task
+
+    client = FakeClient.instances[-1]
+    assert client.options.kwargs["max_budget_usd"] == 2.0
+
+
+@pytest.mark.anyio
+async def test_max_budget_usd_invalid_value_ignored():
+    """A non-numeric maxBudgetUsd is silently ignored (no crash, key absent)."""
+    FakeClient.instances = []
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+    await adapter.start_turn(
+        {"sessionId": "sess_budget_bad", "cwd": "/repo", "content": "hi", "maxBudgetUsd": "not-a-number"}
+    )
+    await adapter._sessions["sess_budget_bad"].active_task
+
+    client = FakeClient.instances[-1]
+    assert "max_budget_usd" not in client.options.kwargs
+
 
 
 @pytest.mark.anyio

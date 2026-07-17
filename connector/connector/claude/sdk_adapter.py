@@ -1181,6 +1181,12 @@ class ClaudeSdkAdapter:
         max_turns = _positive_int(params.get("maxTurns"))
         if max_turns is not None:
             kwargs["max_turns"] = max_turns
+        max_budget_usd = params.get("maxBudgetUsd")
+        if max_budget_usd is not None:
+            try:
+                kwargs["max_budget_usd"] = float(max_budget_usd)
+            except (TypeError, ValueError):
+                pass
         # MCP server configs come from a local file (mcp.json) via a provider so
         # tests can inject in-memory configs. The provider is called every turn
         # so hand-edits to mcp.json take effect on the next turn without

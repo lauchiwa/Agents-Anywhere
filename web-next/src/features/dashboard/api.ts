@@ -618,7 +618,7 @@ export class DashboardApi {
     content: string,
     options: MessageSendOptions = {},
   ): Promise<RpcResponse<unknown>> {
-    const { attachments, clientMessageId, mode, model, effort } = options;
+    const { attachments, clientMessageId, mode, model, effort, maxBudgetUsd } = options;
     return this.client.post<RpcResponse<unknown>>(
       `/sessions/${encodeURIComponent(sessionId)}/messages`,
       {
@@ -628,6 +628,7 @@ export class DashboardApi {
         ...(mode ? { mode } : {}),
         ...(model ? { model } : {}),
         ...(effort ? { effort } : {}),
+        ...(maxBudgetUsd != null ? { maxBudgetUsd } : {}),
       },
       { token },
     );

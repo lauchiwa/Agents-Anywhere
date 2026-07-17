@@ -713,6 +713,7 @@ class MessageCreateRequest(BaseModel):
     mode: str | None = None
     model: str | None = None
     effort: str | None = None
+    maxBudgetUsd: float | None = None
     # Client-generated id (e.g. optimistic temp id). Forwarded to the connector;
     # the connector tags the resulting timeline item so the frontend can
     # dedupe its optimistic placeholder against the real server item.

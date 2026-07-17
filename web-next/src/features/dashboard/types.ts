@@ -447,6 +447,7 @@ export type MessageSendOptions = {
   mode?: string;
   model?: string;
   effort?: string;
+  maxBudgetUsd?: number;
 };
 
 export type UploadedAttachment = {

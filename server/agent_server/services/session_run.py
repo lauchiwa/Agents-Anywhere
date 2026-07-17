@@ -203,6 +203,8 @@ class SessionRunService:
             params["model"] = payload.model
         if payload.effort is not None:
             params["effort"] = payload.effort
+        if payload.maxBudgetUsd is not None:
+            params["maxBudgetUsd"] = payload.maxBudgetUsd
         if payload.clientMessageId:
             params["clientMessageId"] = payload.clientMessageId
         if payload.attachments:
