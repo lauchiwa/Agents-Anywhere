@@ -534,3 +534,36 @@ Implemented session.tag RPC across all layers: sdk_adapter.tag_session (supports
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: maxBudgetUsd passthrough 全链路实现
+
+**Date**: 2026-07-18
+**Task**: maxBudgetUsd passthrough 全链路实现
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+实现 maxBudgetUsd 全链路透传：connector _options_kwargs 读取 maxBudgetUsd 并 float() 转换后写入 ClaudeAgentOptions.max_budget_usd；server MessageCreateRequest 加字段，session_run 转发到 turn.start params；sdk_driver.build_options_kwargs 同步支持；web MessageSendOptions / sendSessionMessage 加 maxBudgetUsd 可选字段。4 个 connector 单元测试覆盖正常传入、缺省、字符串强转、非法值静默忽略。211 connector + TypeScript 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e4c699a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

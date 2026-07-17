@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
+- **Total Sessions**: 17
 - **Last Active**: 2026-07-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~536 | Active |
+| `journal-1.md` | ~569 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-07-18 | maxBudgetUsd passthrough 全链路实现 | `e4c699a` | `fix/android-sse-hang` |
 | 16 | 2026-07-18 | Web 端 Set Tag UI | `e89e990` | `fix/android-sse-hang` |
 | 15 | 2026-07-18 | Web 端 Delete Session UI | `a0cc01c` | `fix/android-sse-hang` |
 | 14 | 2026-07-18 | Web 端 Fork Session UI | `a04f608` | `fix/android-sse-hang` |
