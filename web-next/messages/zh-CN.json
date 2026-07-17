@@ -270,7 +270,10 @@
       "sessionOptions": "会话选项",
       "signOut": "退出登录",
       "unarchive": "取消归档",
-      "unpin": "取消置顶"
+      "unpin": "取消置顶",
+      "fork": "Fork 会话",
+      "forking": "Fork 中…",
+      "forkFailed": "Fork 失败"
     },
     "account": {
       "menu": "账号菜单"

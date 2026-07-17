@@ -91,6 +91,7 @@ export type SessionView = {
     overageStatus?: string
     overageResetsAt?: number
   } | null
+  externalSessionId?: string | null
   updatedAt: string // UI convenience field (not in backend)
 }
 

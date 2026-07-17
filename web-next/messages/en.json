@@ -270,7 +270,10 @@
       "sessionOptions": "Session options",
       "signOut": "Sign out",
       "unarchive": "Unarchive",
-      "unpin": "Unpin"
+      "unpin": "Unpin",
+      "fork": "Fork",
+      "forking": "Forking…",
+      "forkFailed": "Fork failed"
     },
     "account": {
       "menu": "Account menu"

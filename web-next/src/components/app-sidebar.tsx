@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Search, Plus, Settings, Users, Server, LogOut, Pin, Archive, CheckCheck, Copy, FolderOpen, Pencil, LayoutDashboard } from "lucide-react"
+import { Search, Plus, Settings, Users, Server, LogOut, Pin, Archive, CheckCheck, Copy, FolderOpen, Pencil, LayoutDashboard, GitFork } from "lucide-react"
 import { toast } from "sonner"
 import { PairDeviceDialog } from "@/components/pair-device-dialog"
 
@@ -69,6 +69,7 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
     togglePinSession,
     toggleArchiveSession,
     renameSession,
+    forkSession,
     refreshData,
   } = useWorkspace()
   const { signOut, me, session: authSession } = useAuth()
@@ -182,6 +183,7 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
                     onTogglePin={() => togglePinSession(item.id)}
                     onToggleArchive={() => toggleArchiveSession(item.id)}
                     onRename={(title) => renameSession(item.id, title)}
+                    onFork={() => forkSession(item.id)}
                   />
                 ))}
               </SidebarMenu>
@@ -219,6 +221,7 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
                     onTogglePin={() => togglePinSession(item.id)}
                     onToggleArchive={() => toggleArchiveSession(item.id)}
                     onRename={(title) => renameSession(item.id, title)}
+                    onFork={() => forkSession(item.id)}
                   />
                 ))
               )}
@@ -328,13 +331,15 @@ function SessionSidebarItem({
   onTogglePin,
   onToggleArchive,
   onRename,
+  onFork,
 }: {
-  item: { id: string; title?: string | null; status: string; unread: boolean; pinned: boolean; archived: boolean }
+  item: { id: string; title?: string | null; status: string; unread: boolean; pinned: boolean; archived: boolean; externalSessionId?: string | null }
   isActive: boolean
   onOpen: () => void
   onTogglePin: () => void
   onToggleArchive: () => void
   onRename: (title: string) => Promise<boolean>
+  onFork: () => void
 }) {
   const t = useTranslations("dashboard")
   const tSession = useTranslations("dashboard.session")
@@ -342,6 +347,7 @@ function SessionSidebarItem({
   const [renameOpen, setRenameOpen] = React.useState(false)
   const [titleDraft, setTitleDraft] = React.useState(item.title ?? "")
   const [renaming, setRenaming] = React.useState(false)
+  const [forking, setForking] = React.useState(false)
 
   React.useEffect(() => {
     if (!renameOpen) setTitleDraft(item.title ?? "")
@@ -458,6 +464,18 @@ function SessionSidebarItem({
           <ContextMenuItem onSelect={() => setRenameOpen(true)}>
             <Pencil className="size-4" />
             {t("actions.rename")}
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={forking || !item.externalSessionId}
+            onSelect={() => {
+              setForking(true)
+              Promise.resolve(onFork()).catch((err) => {
+                toast.error(err instanceof Error ? err.message : t("actions.forkFailed"))
+              }).finally(() => setForking(false))
+            }}
+          >
+            <GitFork className="size-4" />
+            {forking ? t("actions.forking") : t("actions.fork")}
           </ContextMenuItem>
           <ContextMenuItem onSelect={onTogglePin}>
             <Pin className="size-4" />

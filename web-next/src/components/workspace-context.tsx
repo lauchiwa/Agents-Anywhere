@@ -142,6 +142,7 @@ function mapSession(session: RealSessionView): SessionView {
     runtime: runtimeLabel(session.runtime),
     title: session.title || "Untitled session",
     cwd: session.cwd,
+    externalSessionId: session.externalSessionId ?? null,
     status: session.status,
     takeover: session.takeover,
     pinned: session.pinned,
@@ -227,6 +228,7 @@ type WorkspaceState = {
   togglePinSession: (id: string) => void
   toggleArchiveSession: (id: string) => void
   renameSession: (id: string, title: string) => Promise<boolean>
+  forkSession: (id: string) => Promise<void>
   markSessionRead: (id: string) => void
   upsertSession: (session: RealSessionView) => void
   addOptimisticMessage: (message: OptimisticSessionMessage) => void
@@ -602,6 +604,25 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     }
   }, [authSession?.accessToken, sessions])
 
+  const forkSession = React.useCallback(async (id: string) => {
+    const targetSession = sessions.find((s) => s.id === id)
+    if (!targetSession || !authSession?.accessToken) return
+    const externalSessionId = targetSession.externalSessionId
+    if (!externalSessionId) return
+    try {
+      const response = await dashboardApi.forkSession(authSession.accessToken, id, {
+        externalSessionId,
+        cwd: targetSession.cwd ?? undefined,
+      })
+      const newSessionId = (response.result as { sessionId?: string } | undefined)?.sessionId
+      if (newSessionId) {
+        pushRoute({ page: "session", sessionId: newSessionId })
+      }
+    } catch (err) {
+      throw err
+    }
+  }, [authSession?.accessToken, sessions, pushRoute])
+
   const upsertSession = React.useCallback((session: RealSessionView) => {
     const mapped = mapSession(session)
     setSessions((prev) => {
@@ -780,6 +801,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     togglePinSession,
     toggleArchiveSession,
     renameSession,
+    forkSession,
     markSessionRead,
     upsertSession,
     addOptimisticMessage,
