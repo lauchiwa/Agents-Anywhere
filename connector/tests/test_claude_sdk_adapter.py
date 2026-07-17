@@ -2365,8 +2365,121 @@ async def test_exit_plan_mode_approval_sets_pending_permission_mode():
     assert runtime.pending_permission_mode == "acceptEdits"
 
 
+# ---------------------------------------------------------------------------
+# session.tag RPC
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.anyio
-async def test_exit_plan_mode_fallback_to_accept_edits():
+async def test_tag_session_rpc():
+    """tag_session calls sdk.tag_session with the right args and returns ok:True."""
+
+    tag_calls: list[tuple[Any, ...]] = []
+
+    class SdkWithTag:
+        ClaudeAgentOptions = FakeSdk.ClaudeAgentOptions
+        ClaudeSDKClient = FakeSdk.ClaudeSDKClient
+        HookMatcher = FakeSdk.HookMatcher
+        PermissionResultAllow = FakeSdk.PermissionResultAllow
+        PermissionResultDeny = FakeSdk.PermissionResultDeny
+
+        @staticmethod
+        def tag_session(external_session_id: str, tag: str | None, *, directory: str | None = None) -> None:
+            tag_calls.append((external_session_id, tag, directory))
+
+    adapter = ClaudeSdkAdapter(sdk_module=SdkWithTag)
+    result = await adapter.tag_session(
+        {
+            "externalSessionId": "ext_tag_1",
+            "tag": "my-tag",
+            "cwd": "/repo",
+        }
+    )
+
+    assert result == {"ok": True}
+    assert len(tag_calls) == 1
+    assert tag_calls[0] == ("ext_tag_1", "my-tag", "/repo")
+
+
+@pytest.mark.anyio
+async def test_tag_session_rpc_clear_tag():
+    """tag_session with tag=None clears the tag (passes None to sdk)."""
+
+    tag_calls: list[tuple[Any, ...]] = []
+
+    class SdkWithTag:
+        ClaudeAgentOptions = FakeSdk.ClaudeAgentOptions
+        ClaudeSDKClient = FakeSdk.ClaudeSDKClient
+        HookMatcher = FakeSdk.HookMatcher
+        PermissionResultAllow = FakeSdk.PermissionResultAllow
+        PermissionResultDeny = FakeSdk.PermissionResultDeny
+
+        @staticmethod
+        def tag_session(external_session_id: str, tag: str | None, *, directory: str | None = None) -> None:
+            tag_calls.append((external_session_id, tag, directory))
+
+    adapter = ClaudeSdkAdapter(sdk_module=SdkWithTag)
+    result = await adapter.tag_session(
+        {
+            "externalSessionId": "ext_tag_clear",
+            "tag": None,
+        }
+    )
+
+    assert result == {"ok": True}
+    assert len(tag_calls) == 1
+    assert tag_calls[0] == ("ext_tag_clear", None, None)
+
+
+@pytest.mark.anyio
+async def test_tag_session_rpc_without_cwd():
+    """tag_session without cwd passes directory=None."""
+
+    tag_calls: list[tuple[Any, ...]] = []
+
+    class SdkWithTag:
+        ClaudeAgentOptions = FakeSdk.ClaudeAgentOptions
+        ClaudeSDKClient = FakeSdk.ClaudeSDKClient
+        HookMatcher = FakeSdk.HookMatcher
+        PermissionResultAllow = FakeSdk.PermissionResultAllow
+        PermissionResultDeny = FakeSdk.PermissionResultDeny
+
+        @staticmethod
+        def tag_session(external_session_id: str, tag: str | None, *, directory: str | None = None) -> None:
+            tag_calls.append((external_session_id, tag, directory))
+
+    adapter = ClaudeSdkAdapter(sdk_module=SdkWithTag)
+    result = await adapter.tag_session(
+        {
+            "externalSessionId": "ext_tag_no_cwd",
+            "tag": "no-dir-tag",
+        }
+    )
+
+    assert result == {"ok": True}
+    assert tag_calls[0] == ("ext_tag_no_cwd", "no-dir-tag", None)
+
+
+@pytest.mark.anyio
+async def test_tag_session_rpc_missing_external_id():
+    """tag_session without externalSessionId returns ok:False."""
+
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+    result = await adapter.tag_session({"tag": "orphan-tag"})
+    assert result["ok"] is False
+    assert "externalSessionId" in result.get("reason", "")
+
+
+@pytest.mark.anyio
+async def test_tag_session_rpc_missing_sdk_method():
+    """When sdk has no tag_session, return ok:False with a descriptive reason."""
+
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)  # FakeSdk has no tag_session
+    result = await adapter.tag_session({"externalSessionId": "ext_no_tag", "tag": "x"})
+    assert result["ok"] is False
+    assert "tag_session" in result.get("reason", "")
+
+
     """ExitPlanMode without permissionMode in input falls back to 'acceptEdits'."""
     notifications: list[tuple[str, dict[str, Any]]] = []
 

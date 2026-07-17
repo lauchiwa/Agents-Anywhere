@@ -66,6 +66,12 @@ class SessionForkRequest(BaseModel):
     title: str | None = None
 
 
+class SessionTagRequest(BaseModel):
+    externalSessionId: str
+    tag: str | None = None
+    cwd: str | None = None
+
+
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
@@ -582,6 +588,19 @@ async def fork_session_rpc(
 ) -> RpcResponsePayload:
     try:
         return await run_service.fork_session_in_session(session_id, body, user_id=user_id)
+    except SessionRunError as exc:
+        _raise_session_run_error(exc)
+
+
+@router.post("/{session_id}/tag", response_model=RpcResponsePayload)
+async def tag_session_rpc(
+    session_id: str,
+    body: SessionTagRequest,
+    user_id: str = Depends(current_user_id),
+    run_service: SessionRunService = Depends(get_session_run_service),
+) -> RpcResponsePayload:
+    try:
+        return await run_service.tag_session_in_session(session_id, body, user_id=user_id)
     except SessionRunError as exc:
         _raise_session_run_error(exc)
 

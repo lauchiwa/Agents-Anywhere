@@ -495,6 +495,32 @@ class SessionRunService:
             raise SessionRunUpstreamError(exc.message or exc.code) from exc
         return RpcResponsePayload(ok=True, result=result)
 
+    async def tag_session_in_session(
+        self,
+        session_id: str,
+        body: Any,
+        *,
+        user_id: str,
+    ) -> RpcResponsePayload:
+        try:
+            session = await self._store.get_session(session_id, user_id=user_id)
+        except KeyError:
+            raise SessionRunNotFoundError("session not found") from None
+        params: dict[str, Any] = {
+            "sessionId": session_id,
+            "runtime": session.runtime,
+            "externalSessionId": body.externalSessionId,
+            "tag": body.tag,
+            "cwd": body.cwd,
+        }
+        try:
+            result = await self._manager.request(session.connectorId, "session.tag", params)
+        except ConnectorOfflineError as exc:
+            raise SessionRunConflictError(str(exc)) from exc
+        except ConnectorRpcError as exc:
+            raise SessionRunUpstreamError(exc.message or exc.code) from exc
+        return RpcResponsePayload(ok=True, result=result)
+
     async def apply_live_runtime_switch(
         self,
         session_id: str,

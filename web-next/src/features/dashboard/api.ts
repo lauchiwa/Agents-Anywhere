@@ -582,6 +582,20 @@ export class DashboardApi {
     );
   }
 
+  tagSession(
+    token: string,
+    sessionId: string,
+    externalSessionId: string,
+    tag: string | null,
+    cwd?: string,
+  ): Promise<RpcResponse<unknown>> {
+    return this.client.post<RpcResponse<unknown>>(
+      `/sessions/${encodeURIComponent(sessionId)}/tag`,
+      { externalSessionId, tag, cwd },
+      { token },
+    );
+  }
+
   resolveApproval(
     token: string,
     approvalId: string,

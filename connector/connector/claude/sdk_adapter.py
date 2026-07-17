@@ -523,6 +523,31 @@ class ClaudeSdkAdapter:
             )
             return {"ok": False, "reason": "fork_session failed"}
 
+    async def tag_session(self, params: dict[str, Any]) -> dict[str, Any]:
+        external_session_id = _optional_string(params.get("externalSessionId"))
+        if not external_session_id:
+            return {"ok": False, "reason": "externalSessionId required"}
+        # tag=None clears the tag; omitting the key entirely is treated as clear too
+        tag: str | None = params.get("tag")  # may be None (explicit clear) or str
+        cwd = _optional_string(params.get("cwd"))
+        sdk = self._load_sdk()
+        tag_fn = getattr(sdk, "tag_session", None)
+        if not callable(tag_fn):
+            return {"ok": False, "reason": "sdk does not support tag_session"}
+        try:
+            if cwd:
+                tag_fn(external_session_id, tag, directory=cwd)
+            else:
+                tag_fn(external_session_id, tag)
+        except Exception:
+            logger.debug(
+                "sdk tag_session failed external_session_id={}",
+                external_session_id,
+                exc_info=True,
+            )
+            return {"ok": False, "reason": "tag_session failed"}
+        return {"ok": True}
+
     def _runtime_for(self, session_id: str, params: dict[str, Any]) -> _SdkSessionRuntime:
         runtime = self._sessions.get(session_id)
         if runtime is None:

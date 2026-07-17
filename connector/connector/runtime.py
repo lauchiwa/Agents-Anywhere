@@ -353,6 +353,8 @@ class BackendRpcClient:
             return await self._resolve_adapter(params).delete_session(params)
         if method == "session.fork":
             return await self._resolve_adapter(params).fork_session(params)
+        if method == "session.tag":
+            return await self._resolve_adapter(params).tag_session(params)
         if method == "turn.start":
             return await self._resolve_adapter(params).start_turn(
                 {**params, "connectorId": self.config.connector_id}
