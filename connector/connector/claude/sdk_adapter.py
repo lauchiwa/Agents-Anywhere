@@ -1007,6 +1007,11 @@ class ClaudeSdkAdapter:
             # stays the permission gate; include_hook_events is purely
             # observational.
             "include_hook_events": True,
+            # Opus 4.7+ defaults display="omitted" which returns only a
+            # signature without the thinking text, making reasoning cards
+            # appear empty. Force "summarized" so the full text is always
+            # available regardless of model or SDK version changes.
+            "thinking": {"type": "adaptive", "display": "summarized"},
         }
         if runtime.cwd:
             kwargs["cwd"] = runtime.cwd
