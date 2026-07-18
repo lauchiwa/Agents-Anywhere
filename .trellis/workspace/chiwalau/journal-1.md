@@ -766,3 +766,36 @@ Implemented full MCP server config editor for Android and Web. Android: McpServe
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: Web 工具卡 UI 精化（图标+detail）
+
+**Date**: 2026-07-18
+**Task**: Web 工具卡 UI 精化（图标+detail）
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+优化 session-tool-cards.tsx 中所有 tool kind 的渲染：ToolIcon 为 web_search/mcp/tool_search/schedule_wakeup/task_stop 各配专属 lucide 图标（Globe/Cpu/Search/Clock/OctagonX）；ToolDetailPanel 新增 webSearchUrl 显示可点击 URL 链接、wakeupPrompt 显示 schedule_wakeup 的 prompt 字段；running-spinner 逻辑后移至 fallback 前防止覆盖已命名 kind。TypeScript noEmit 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a629e18` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
