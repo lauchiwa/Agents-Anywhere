@@ -72,6 +72,7 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
     page,
     filter,
     search,
+    setSearch,
     openSession,
     goHome,
     navigate,
@@ -89,6 +90,8 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
   const tCommon = useTranslations("common")
   const [signOutOpen, setSignOutOpen] = React.useState(false)
   const [pairOpen, setPairOpen] = React.useState(false)
+  const [searchOpen, setSearchOpen] = React.useState(false)
+  const searchInputRef = React.useRef<HTMLInputElement>(null)
 
   const userId = me?.userId ?? "Unknown"
   const userRole = me?.role ? me.role.replace(/^\w/, (char) => char.toUpperCase()) : ""
@@ -96,8 +99,8 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
   const isAdmin = me?.role === "admin"
 
   const pinnedSessions = React.useMemo(
-    () => sessions.filter((session) => session.pinned && !session.archived),
-    [sessions],
+    () => filterSessions(sessions.filter((session) => session.pinned && !session.archived), filter, search),
+    [sessions, filter, search],
   )
 
   const markAllRead = React.useCallback(async () => {
@@ -123,13 +126,43 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
             Agents Anywhere
           </button>
           <div className="flex items-center gap-1 text-muted-foreground">
-            <button
-              type="button"
-              aria-label={t("actions.search")}
-              className="rounded-md p-1.5 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            >
-              <Search className="size-4" />
-            </button>
+            {searchOpen ? (
+              <div className="flex items-center gap-1">
+                <input
+                  ref={searchInputRef}
+                  autoFocus
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setSearch("")
+                      setSearchOpen(false)
+                    }
+                  }}
+                  placeholder={t("actions.searchPlaceholder")}
+                  aria-label={t("actions.searchPlaceholder")}
+                  className="h-7 w-36 rounded-md border border-sidebar-border bg-sidebar px-2 text-xs text-sidebar-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-sidebar-ring"
+                />
+                <button
+                  type="button"
+                  aria-label={t("actions.clearSearch")}
+                  onClick={() => { setSearch(""); setSearchOpen(false) }}
+                  className="rounded-md p-1.5 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                >
+                  <Search className="size-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                aria-label={t("actions.search")}
+                onClick={() => setSearchOpen(true)}
+                className="rounded-md p-1.5 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              >
+                <Search className="size-4" />
+              </button>
+            )}
           </div>
         </div>
 

@@ -713,7 +713,13 @@ export function filterSessions(
     if (filter.connectorId !== "all" && s.connectorId !== filter.connectorId) return false
     if (filter.runtime !== "all" && s.runtime !== filter.runtime) return false
     if (filter.status !== "all" && s.status !== filter.status) return false
-    if (query.trim() && !(s.title ?? "").toLowerCase().includes(query.trim().toLowerCase())) return false
+    if (query.trim()) {
+      const q = query.trim().toLowerCase()
+      const inTitle = (s.title ?? "").toLowerCase().includes(q)
+      const inTag = (s.tag ?? "").toLowerCase().includes(q)
+      const inCwd = (s.cwd ? s.cwd.split("/").pop()! : "").toLowerCase().includes(q)
+      if (!inTitle && !inTag && !inCwd) return false
+    }
     return true
   })
 }

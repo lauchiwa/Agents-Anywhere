@@ -267,6 +267,8 @@
       "rename": "Rename",
       "retry": "Retry",
       "search": "Search",
+      "searchPlaceholder": "Search sessions…",
+      "clearSearch": "Clear search",
       "sessionOptions": "Session options",
       "signOut": "Sign out",
       "unarchive": "Unarchive",
