@@ -20,8 +20,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,7 +61,7 @@ internal fun SessionRuntimeSettingsSheet(
     state: RuntimeSettingsState,
     darkMode: Boolean,
     onDismiss: () -> Unit,
-    onPatch: (String, String?) -> Unit,
+    onPatch: (String, Any?) -> Unit,
     onMcpServers: () -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -117,11 +120,12 @@ private fun ModelPage(
     onDismiss: () -> Unit,
     onMcpServers: () -> Unit,
     onOpenModeEffort: () -> Unit,
-    onPatch: (String, String?) -> Unit,
+    onPatch: (String, Any?) -> Unit,
 ) {
     val modelField = state.sessionField("model")
     val modeField = state.sessionField("permissionMode")
     val effortField = state.filteredEffortField()
+    val maxTurnsField = state.sessionNumberField("maxTurns")
 
     SheetHeader(
         title = stringResource(R.string.session_runtime_select_model),
@@ -148,6 +152,11 @@ private fun ModelPage(
     }
 
     DividerLine(palette.divider)
+    maxTurnsField?.let { field ->
+        val current = state.settings[field.key]
+        SessionNumberField(field = field, current = current, palette = palette, onPatch = onPatch)
+        DividerLine(palette.divider)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -204,7 +213,7 @@ private fun ModeEffortPage(
     state: RuntimeSettingsState,
     palette: RuntimeSheetPalette,
     onBack: () -> Unit,
-    onPatch: (String, String?) -> Unit,
+    onPatch: (String, Any?) -> Unit,
 ) {
     val modelField = state.sessionField("model")
     val modeField = state.sessionField("permissionMode")
@@ -344,7 +353,7 @@ private fun EffortSegments(
     field: RuntimeConfigField,
     selected: String,
     palette: RuntimeSheetPalette,
-    onPatch: (String, String?) -> Unit,
+    onPatch: (String, Any?) -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -504,6 +513,12 @@ private fun RuntimeSettingsState.sessionField(key: String): RuntimeConfigField? 
         ?.firstOrNull { it.key == key && it.options.isNotEmpty() }
 }
 
+private fun RuntimeSettingsState.sessionNumberField(key: String): RuntimeConfigField? {
+    return schema?.fields
+        ?.filter { it.allowSessionOverride && !it.hidden && it.type == "number" && visible(it) }
+        ?.firstOrNull { it.key == key }
+}
+
 private fun RuntimeSettingsState.filteredEffortField(): RuntimeConfigField? {
     val field = sessionField("effort") ?: return null
     val modelField = sessionField("model")
@@ -619,5 +634,48 @@ private fun runtimeSheetPalette(darkMode: Boolean): RuntimeSheetPalette {
             segmentShadow = Color(0x10000000),
             home = Color(0xFFC7C7C7),
         )
+    }
+}
+
+@Composable
+private fun SessionNumberField(
+    field: RuntimeConfigField,
+    current: Any?,
+    palette: RuntimeSheetPalette,
+    onPatch: (String, Any?) -> Unit,
+) {
+    val initial = when (current) {
+        is Int -> current.toString()
+        is Number -> current.toInt().toString()
+        else -> ""
+    }
+    var text by remember(field.key, initial) { mutableStateOf(initial) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = field.label,
+            color = palette.primaryText,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        OutlinedTextField(
+            value = text,
+            onValueChange = { raw ->
+                val digits = raw.filter { it.isDigit() }.take(6)
+                text = digits
+                onPatch(field.key, if (digits.isEmpty()) null else digits.toInt())
+            },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            placeholder = { Text(field.description ?: field.label, color = palette.secondaryText) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        field.description?.let {
+            Text(text = it, color = palette.secondaryText, fontSize = 12.sp)
+        }
     }
 }

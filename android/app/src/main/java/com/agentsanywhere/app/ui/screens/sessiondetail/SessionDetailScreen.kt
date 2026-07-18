@@ -546,7 +546,7 @@ fun SessionDetailScreen(
         }
     }
 
-    fun patchRuntimeSetting(key: String, value: String?) {
+    fun patchRuntimeSetting(key: String, value: Any?) {
         val id = sessionId ?: return
         if (state.runtimeSettings.savingKey != null) return
         state = state.copy(
