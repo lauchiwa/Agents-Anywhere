@@ -699,3 +699,36 @@ SessionComposer 工具栏新增 Budget 按钮：未设置显示 No limit，点�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: Android tag chip + session finish
+
+**Date**: 2026-07-18
+**Task**: Android tag chip + session finish
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+Added SessionTagChip composable to HomeScreen.kt; rendered in both HomePinnedSessionRow and HomeRecentSessionRow next to title. Compiled clean, committed, pushed to fork/fix/android-sse-hang.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dbdf1d2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

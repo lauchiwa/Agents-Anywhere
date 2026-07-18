@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 21
+- **Total Sessions**: 22
 - **Last Active**: 2026-07-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~701 | Active |
+| `journal-1.md` | ~734 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 22 | 2026-07-18 | Android tag chip + session finish | `dbdf1d2` | `fix/android-sse-hang` |
 | 21 | 2026-07-18 | Web maxBudgetUsd 预算输入 UI | `4fc6ea2` | `fix/android-sse-hang` |
 | 20 | 2026-07-18 | Android session fork/delete/tag UI | `8a17087` | `fix/android-sse-hang` |
 | 19 | 2026-07-18 | Web context usage badge 接线修复 | `7c1194f` | `fix/android-sse-hang` |
