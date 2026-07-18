@@ -186,10 +186,12 @@ class SessionsApi(
         content: String,
         clientMessageId: String,
         attachments: List<RemoteUploadedAttachment> = emptyList(),
+        maxBudgetUsd: Double? = null,
     ): RemoteRpcResponse {
         val body = JSONObject()
             .put("content", content)
             .put("clientMessageId", clientMessageId)
+        if (maxBudgetUsd != null) body.put("maxBudgetUsd", maxBudgetUsd)
         if (attachments.isNotEmpty()) {
             body.put(
                 "attachments",

@@ -134,6 +134,7 @@ fun SessionDetailScreen(
         )
     }
     var draft by remember(sessionId) { mutableStateOf(restoredComposerDraft.text) }
+    var maxBudgetUsd by remember(sessionId) { mutableStateOf<Double?>(null) }
     var forceLatestRequest by remember(sessionId) { mutableStateOf(0) }
     var streamLatestRequest by remember(sessionId) { mutableStateOf(0) }
     var attachments by remember(sessionId) { mutableStateOf(restoredComposerDraft.attachments) }
@@ -443,7 +444,7 @@ fun SessionDetailScreen(
         }
     }
 
-    fun sendText(text: String) {
+    fun sendText(text: String, budget: Double? = null) {
         val id = sessionId ?: return
         val clientMessageId = "opt_${UUID.randomUUID()}"
         val pendingAttachments = attachments
@@ -469,6 +470,7 @@ fun SessionDetailScreen(
                 content = text,
                 clientMessageId = clientMessageId,
                 uploadedAttachments = uploadedAttachments,
+                maxBudgetUsd = budget,
             )
                 .onSuccess { result ->
                     state = controller.markOptimisticMessage(
@@ -500,7 +502,7 @@ fun SessionDetailScreen(
             pendingErrorSend = text
             return
         }
-        sendText(text)
+        sendText(text, maxBudgetUsd)
     }
 
     fun applyTakeover(enabled: Boolean) {
@@ -823,6 +825,8 @@ fun SessionDetailScreen(
                             interrupting = state.interrupting,
                             placeholder = placeholder,
                             attachments = attachments,
+                            maxBudgetUsd = maxBudgetUsd,
+                            onMaxBudgetUsdChange = { maxBudgetUsd = it },
                             onToggleTakeover = { takeoverConfirm = !takeoverEnabled },
                             onPickPhoto = ::openPhotoPicker,
                             onPickFile = ::openFilePicker,

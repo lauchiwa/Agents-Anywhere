@@ -366,6 +366,7 @@
     <string name="session_tool_summary_created_files">Created %1$d files</string>
     <string name="session_tool_summary_items">%1$d activities</string>
     <string name="session_takeover">Takeover</string>
+    <string name="composer_budget_no_limit">No limit</string>
     <string name="session_attachment_camera">Camera</string>
     <string name="session_attachment_photos">Photos</string>
     <string name="session_attachment_file">File</string>

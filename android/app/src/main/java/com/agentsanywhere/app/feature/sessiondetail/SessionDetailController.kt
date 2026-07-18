@@ -190,6 +190,7 @@ class SessionDetailController(
         clientMessageId: String,
         attachments: List<UploadFilePart> = emptyList(),
         uploadedAttachments: List<TimelineAttachment> = emptyList(),
+        maxBudgetUsd: Double? = null,
     ): Result<SendMessageResult> {
         return withContext(Dispatchers.IO) {
             runCatching {
@@ -213,6 +214,7 @@ class SessionDetailController(
                     content = content.ifBlank { ATTACHMENT_ONLY_PROMPT },
                     clientMessageId = clientMessageId,
                     attachments = uploaded.map { it.toRemoteUploadedAttachment() },
+                    maxBudgetUsd = maxBudgetUsd,
                 ).let { response ->
                     SendMessageResult(
                         turnId = response.turnId,

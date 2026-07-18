@@ -53,6 +53,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -95,6 +96,8 @@ internal fun MessageComposer(
     interrupting: Boolean,
     placeholder: String,
     attachments: List<PendingAttachment>,
+    maxBudgetUsd: Double?,
+    onMaxBudgetUsdChange: (Double?) -> Unit,
     onToggleTakeover: () -> Unit,
     onPickPhoto: () -> Unit,
     onPickFile: () -> Unit,
@@ -195,6 +198,8 @@ internal fun MessageComposer(
                 canSend = canSend,
                 showInterrupt = showInterrupt,
                 interrupting = interrupting,
+                maxBudgetUsd = maxBudgetUsd,
+                onMaxBudgetUsdChange = onMaxBudgetUsdChange,
                 onToggleTakeover = onToggleTakeover,
                 onOpenAttachMenu = { if (inputEnabled) showAttachMenu = true },
                 onSend = onSend,
@@ -425,6 +430,8 @@ private fun ComposerActions(
     canSend: Boolean,
     showInterrupt: Boolean,
     interrupting: Boolean,
+    maxBudgetUsd: Double?,
+    onMaxBudgetUsdChange: (Double?) -> Unit,
     onToggleTakeover: () -> Unit,
     onOpenAttachMenu: () -> Unit,
     onSend: () -> Unit,
@@ -510,6 +517,15 @@ private fun ComposerActions(
                     maxLines = 1,
                 )
             }
+            BudgetChip(
+                darkMode = darkMode,
+                surface = surface,
+                border = border,
+                muted = label,
+                maxBudgetUsd = maxBudgetUsd,
+                enabled = inputEnabled,
+                onCommit = onMaxBudgetUsdChange,
+            )
         }
         Box(
             modifier = Modifier
@@ -658,5 +674,83 @@ private fun TakeoverSwitch(darkMode: Boolean, enabled: Boolean) {
                 .clip(CircleShape)
                 .background(knob),
         )
+    }
+}
+
+@Composable
+private fun BudgetChip(
+    darkMode: Boolean,
+    surface: Color,
+    border: Color,
+    muted: Color,
+    maxBudgetUsd: Double?,
+    enabled: Boolean,
+    onCommit: (Double?) -> Unit,
+) {
+    var editing by remember { mutableStateOf(false) }
+    var draft by remember { mutableStateOf("") }
+
+    val chipModifier = if (darkMode) {
+        Modifier
+            .height(28.dp)
+            .padding(horizontal = 4.dp)
+    } else {
+        Modifier
+            .height(28.dp)
+            .clip(CircleShape)
+            .background(surface)
+            .border(1.dp, border, CircleShape)
+            .padding(horizontal = 9.dp)
+    }
+
+    if (editing) {
+        Row(
+            modifier = chipModifier,
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(text = "$", color = muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            BasicTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Decimal,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(onDone = {
+                    val v = draft.toDoubleOrNull()
+                    onCommit(if (v != null && v > 0) v else null)
+                    editing = false
+                }),
+                textStyle = TextStyle(
+                    color = muted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+                cursorBrush = SolidColor(muted),
+                modifier = Modifier.width(52.dp),
+            )
+        }
+    } else {
+        Row(
+            modifier = chipModifier.then(
+                if (enabled) Modifier.noRippleClickable(onClick = {
+                    draft = maxBudgetUsd?.let { "%.2f".format(it) } ?: ""
+                    editing = true
+                }) else Modifier,
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(text = "$", color = muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                text = maxBudgetUsd?.let { "%.2f".format(it) } ?: stringResource(R.string.composer_budget_no_limit),
+                color = muted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
     }
 }
