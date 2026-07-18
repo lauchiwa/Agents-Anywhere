@@ -633,3 +633,36 @@ mapSession 补 contextUsage 和 rateLimit 两个字段映射；ContextUsageBadge
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: Android session fork/delete/tag UI
+
+**Date**: 2026-07-18
+**Task**: Android session fork/delete/tag UI
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+Added Fork, Set Tag, Delete to Android home screen long-press menu. Full stack: SessionsApi (3 new HTTP methods), SessionsController (3 new public methods), AgentSession model (tag + externalSessionId fields), HomeScreen (new callbacks, dialogs, menu rows), string resources (en + zh-CN). Build passes.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8a17087` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
