@@ -617,6 +617,18 @@ async def get_context_usage(
         _raise_session_run_error(exc)
 
 
+@router.get("/{session_id}/server-info", response_model=RpcResponsePayload)
+async def get_server_info(
+    session_id: str,
+    user_id: str = Depends(current_user_id),
+    run_service: SessionRunService = Depends(get_session_run_service),
+) -> RpcResponsePayload:
+    try:
+        return await run_service.get_server_info_in_session(session_id, user_id=user_id)
+    except SessionRunError as exc:
+        _raise_session_run_error(exc)
+
+
 @router.post("/{session_id}/sync", response_model=RpcResponsePayload)
 async def sync_session(
     session_id: str,

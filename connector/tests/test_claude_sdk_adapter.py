@@ -1918,7 +1918,71 @@ async def test_claude_sdk_adapter_mcp_status_swallows_sdk_exception():
 
 
 @pytest.mark.anyio
-async def test_claude_sdk_adapter_rename_session_calls_sdk():
+async def test_claude_sdk_adapter_server_info_returns_error_when_session_unknown():
+    """`get_server_info` on an unknown session → {ok: false}, no exception."""
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+    result = await adapter.get_server_info({"sessionId": "nope"})
+    assert result["ok"] is False
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_server_info_returns_error_when_sdk_missing_method():
+    """Older SDKs without `get_server_info` → {ok: false}, not an error."""
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+    runtime = adapter._runtime_for(
+        "sess_sinfo_old", {"sessionId": "sess_sinfo_old"}
+    )
+
+    class LegacyClient:
+        pass
+
+    runtime.client = LegacyClient()
+    result = await adapter.get_server_info({"sessionId": "sess_sinfo_old"})
+    assert result["ok"] is False
+    assert "not available" in result.get("reason", "")
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_server_info_forwards_sdk_response():
+    """SDK response dict is returned with ok:True merged in."""
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+    runtime = adapter._runtime_for(
+        "sess_sinfo_ok", {"sessionId": "sess_sinfo_ok"}
+    )
+    sdk_payload = {
+        "commands": [
+            {"name": "/clear", "description": "Clear conversation history"},
+            {"name": "/model", "description": "Switch model"},
+        ],
+        "output_style": "default",
+    }
+
+    class LiveClient:
+        async def get_server_info(self) -> dict[str, Any]:
+            return sdk_payload
+
+    runtime.client = LiveClient()
+    result = await adapter.get_server_info({"sessionId": "sess_sinfo_ok"})
+    assert result["ok"] is True
+    assert result["commands"] == sdk_payload["commands"]
+    assert result["output_style"] == "default"
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_server_info_swallows_sdk_exception():
+    """A failing `client.get_server_info()` → {ok: false}, no traceback bubble."""
+    adapter = ClaudeSdkAdapter(sdk_module=FakeSdk)
+    runtime = adapter._runtime_for(
+        "sess_sinfo_fail", {"sessionId": "sess_sinfo_fail"}
+    )
+
+    class ExplodingClient:
+        async def get_server_info(self) -> dict[str, Any]:
+            raise RuntimeError("info unavailable")
+
+    runtime.client = ExplodingClient()
+    result = await adapter.get_server_info({"sessionId": "sess_sinfo_fail"})
+    assert result["ok"] is False
     """rename_session calls sdk.rename_session with the right args and returns ok:True."""
     rename_calls: list[tuple[Any, ...]] = []
 

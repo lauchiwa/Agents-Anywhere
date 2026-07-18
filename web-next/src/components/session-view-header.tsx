@@ -16,6 +16,8 @@ import type { SessionMemorySnapshot } from "@/components/session-detail"
 import { cn } from "@/lib/utils"
 import { useTranslations } from "next-intl"
 import type { SessionView as SessionViewModel } from "@/lib/demo-api"
+import { useAuth } from "@/components/auth/auth-context"
+import { dashboardApi } from "@/features/dashboard/api"
 
 type PanelIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>
 
@@ -313,6 +315,7 @@ function SessionMetaBadge({
               </div>
             )}
           </div>
+          <SlashCommandsSection sessionId={session.id} />
         </div>
       </HoverCardContent>
     </HoverCard>
@@ -473,5 +476,74 @@ function TogglePanelButton({ id, icon: Icon }: { id: PanelId; icon: PanelIcon })
     >
       <Icon className="size-4" />
     </button>
+  )
+}
+
+type SlashCommand = {
+  name?: string
+  description?: string
+  isEnabled?: boolean
+  isBuiltin?: boolean
+}
+
+function SlashCommandsSection({ sessionId }: { sessionId: string }) {
+  const { session: authSession } = useAuth()
+  const token = authSession?.accessToken ?? null
+  const [open, setOpen] = React.useState(false)
+  const [commands, setCommands] = React.useState<SlashCommand[] | null>(null)
+  const [loading, setLoading] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!open || commands !== null || !token) return
+    let cancelled = false
+    setLoading(true)
+    dashboardApi.getServerInfo(token, sessionId)
+      .then((resp) => {
+        if (cancelled) return
+        const result = resp.result as Record<string, unknown> | null | undefined
+        const raw = Array.isArray(result?.commands) ? (result.commands as SlashCommand[]) : []
+        setCommands(raw)
+      })
+      .catch(() => {
+        if (!cancelled) setCommands([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [open, commands, token, sessionId])
+
+  return (
+    <div>
+      <button
+        type="button"
+        className="flex w-full items-center justify-between py-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground hover:text-foreground"
+        onClick={() => setOpen((v) => !v)}
+      >
+        Slash Commands
+        {open ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+      </button>
+      {open && (
+        <div className="pt-2">
+          {loading ? (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" />
+              <span>Loading…</span>
+            </div>
+          ) : commands && commands.length > 0 ? (
+            <div className="space-y-1">
+              {commands.filter((c) => c.isEnabled !== false).map((cmd, i) => (
+                <div key={cmd.name ?? i} className="grid grid-cols-[100px_minmax(0,1fr)] gap-x-3 text-xs">
+                  <span className="code-mono truncate font-medium text-foreground">{cmd.name}</span>
+                  <span className="truncate text-muted-foreground">{cmd.description ?? ""}</span>
+                </div>
+              ))}
+            </div>
+          ) : commands !== null ? (
+            <p className="text-xs text-muted-foreground">No commands available</p>
+          ) : null}
+        </div>
+      )}
+    </div>
   )
 }

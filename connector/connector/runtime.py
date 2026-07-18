@@ -393,6 +393,18 @@ class BackendRpcClient:
             if not callable(handler):
                 return {"mcpServers": []}
             return await handler(adapter_params)
+        if method == "runtime.getServerInfo":
+            # Return cached CLI initialization result (slash commands, output
+            # style). Defaults to claude runtime; adapters without the method
+            # degrade gracefully.
+            adapter_params = params
+            if not isinstance(params, dict) or not params.get("runtime"):
+                adapter_params = {**(params or {}), "runtime": "claude"}
+            adapter = self._resolve_adapter(adapter_params)
+            handler = getattr(adapter, "get_server_info", None)
+            if not callable(handler):
+                return {"ok": False, "reason": "not supported"}
+            return await handler(adapter_params)
         if method == "fs.prepareDownload":
             return await self.local_ops.prepare_download(params)
         if method == "fs.uploadPreparedDownload":

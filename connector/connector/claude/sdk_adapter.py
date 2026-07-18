@@ -446,6 +446,34 @@ class ClaudeSdkAdapter:
             return {"mcpServers": servers if isinstance(servers, list) else []}
         return {"mcpServers": []}
 
+    async def get_server_info(self, params: dict[str, Any]) -> dict[str, Any]:
+        # Return the cached CLI initialization result (slash commands, output
+        # style, etc.) for the given session. The SDK caches this at connect
+        # time, so the call is cheap. Returns {ok: false} when the session is
+        # unknown, idle, or the SDK version pre-dates get_server_info().
+        session_id = _optional_string(params.get("sessionId"))
+        if not session_id:
+            return {"ok": False, "reason": "sessionId required"}
+        runtime = self._sessions.get(session_id)
+        if runtime is None or runtime.client is None:
+            return {"ok": False, "reason": "session not connected"}
+        getter = getattr(runtime.client, "get_server_info", None)
+        if not callable(getter):
+            return {"ok": False, "reason": "get_server_info not available"}
+        try:
+            raw = await getter()
+        except Exception:
+            logger.debug(
+                "claude sdk get_server_info failed session_id={} external_session_id={}",
+                runtime.session_id,
+                runtime.external_session_id,
+                exc_info=True,
+            )
+            return {"ok": False, "reason": "get_server_info failed"}
+        if not isinstance(raw, dict):
+            return {"ok": False, "reason": "unexpected response shape"}
+        return {**raw, "ok": True}
+
     async def rename_session(self, params: dict[str, Any]) -> dict[str, Any]:
         external_session_id = _optional_string(params.get("externalSessionId"))
         title = _optional_string(params.get("title"))

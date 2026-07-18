@@ -554,6 +554,13 @@ export class DashboardApi {
     );
   }
 
+  getServerInfo(token: string, sessionId: string): Promise<RpcResponse<unknown>> {
+    return this.client.get<RpcResponse<unknown>>(
+      `/sessions/${encodeURIComponent(sessionId)}/server-info`,
+      { token },
+    );
+  }
+
   deleteSession(
     token: string,
     sessionId: string,
