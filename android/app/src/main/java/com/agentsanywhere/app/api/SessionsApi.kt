@@ -508,4 +508,32 @@ class SessionsApi(
         )
     }
 
+    fun getSessionMcpServers(
+        serverUrl: String,
+        authorizationToken: String,
+        sessionId: String,
+    ): Map<String, McpServerConfig> {
+        val response = client.getJson(
+            serverUrl = serverUrl,
+            path = "/sessions/${sessionId.urlEncode()}/mcp-servers",
+            authorizationToken = authorizationToken,
+        )
+        return response.optJSONObject("mcpServers")?.toMcpServersMap() ?: emptyMap()
+    }
+
+    fun putSessionMcpServers(
+        serverUrl: String,
+        authorizationToken: String,
+        sessionId: String,
+        servers: Map<String, McpServerConfig>,
+    ): Map<String, McpServerConfig> {
+        val body = JSONObject().put("mcpServers", servers.toMcpServersJsonObject())
+        val response = client.putJson(
+            serverUrl = serverUrl,
+            path = "/sessions/${sessionId.urlEncode()}/mcp-servers",
+            body = body,
+            authorizationToken = authorizationToken,
+        )
+        return response.optJSONObject("mcpServers")?.toMcpServersMap() ?: emptyMap()
+    }
 }

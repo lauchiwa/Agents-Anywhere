@@ -769,6 +769,28 @@
       "description": "Agents Anywhere needs a paired online device before it can choose a workspace or start sessions.",
       "later": "Maybe later",
       "addDevice": "Add device"
+    },
+    "mcp": {
+      "title": "MCP Servers",
+      "addServer": "Add server",
+      "noServers": "No MCP servers configured",
+      "serverName": "Server name",
+      "type": "Type",
+      "command": "Command",
+      "args": "Arguments (one per line)",
+      "url": "URL",
+      "env": "Environment variables",
+      "headers": "Headers",
+      "addEnv": "Add variable",
+      "addHeader": "Add header",
+      "save": "Save",
+      "saving": "Saving…",
+      "loadFailed": "Could not load MCP servers",
+      "saveFailed": "Could not save MCP servers",
+      "nameRequired": "Server name is required",
+      "nameUnique": "Server names must be unique",
+      "commandRequired": "Command is required",
+      "urlRequired": "URL is required"
     }
   },
   "auth": {

@@ -1,13 +1,14 @@
 "use client"
 
 import * as React from "react"
-import { Download, FolderOpen, Loader2, PanelLeft, SquareTerminal } from "lucide-react"
+import { ChevronDown, ChevronUp, Download, FolderOpen, Loader2, PanelLeft, SquareTerminal } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { Input } from "@/components/ui/input"
+import { McpServersEditor } from "@/components/mcp-servers-editor"
 import { useSidebar } from "@/components/ui/sidebar"
 import { useDashboardSidebarControls } from "@/components/demo"
 import { useWorkspace, type PanelId } from "@/components/workspace-context"
@@ -231,6 +232,8 @@ function SessionMetaBadge({
   exporting?: boolean
 }) {
   const t = useTranslations("dashboard.session")
+  const tMcp = useTranslations("dashboard.mcp")
+  const [mcpOpen, setMcpOpen] = React.useState(false)
   const label = `${connectorName ?? session.connectorId}/${session.runtime}`
   const timelineSummary = memorySnapshot
     ? t("timelineSummary", { count: memorySnapshot.items.length, seq: memorySnapshot.nextSeq })
@@ -294,6 +297,21 @@ function SessionMetaBadge({
               {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
               {exporting ? t("exportingTimeline") : t("exportRemoteTimelineJson")}
             </Button>
+          </div>
+          <div>
+            <button
+              type="button"
+              className="flex w-full items-center justify-between py-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground hover:text-foreground"
+              onClick={() => setMcpOpen((v) => !v)}
+            >
+              {tMcp("title")}
+              {mcpOpen ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+            </button>
+            {mcpOpen && (
+              <div className="pt-2">
+                <McpServersEditor scope="session" scopeId={session.id} />
+              </div>
+            )}
           </div>
         </div>
       </HoverCardContent>

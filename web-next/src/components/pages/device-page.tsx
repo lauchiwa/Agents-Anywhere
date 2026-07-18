@@ -22,6 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { LoadingState } from "@/components/loading-state"
+import { McpServersEditor } from "@/components/mcp-servers-editor"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import {
   Tooltip,
@@ -625,6 +626,7 @@ function runtimeIssueReason(report: RuntimeReport) {
 export function DevicePage() {
   const t = useTranslations("dashboard.device")
   const tCommon = useTranslations("common")
+  const tMcp = useTranslations("dashboard.mcp")
   const {
     activeConnectorId,
     connectors,
@@ -1002,6 +1004,18 @@ export function DevicePage() {
         </div>
 
         <Separator className="my-6" />
+
+        {/* MCP Servers */}
+        <section className="mb-8">
+          <div className="mb-3">
+            <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              {tMcp("title")}
+            </h2>
+          </div>
+          <McpServersEditor scope="connector" scopeId={connector.id} />
+        </section>
+
+        <Separator className="my-2 mb-6" />
 
         {/* Agents */}
         <section className="mb-8">

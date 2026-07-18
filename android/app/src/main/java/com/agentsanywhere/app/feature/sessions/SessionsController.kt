@@ -3,6 +3,7 @@ package com.agentsanywhere.app.feature.sessions
 import com.agentsanywhere.app.api.ApiException
 import com.agentsanywhere.app.api.DevicesApi
 import com.agentsanywhere.app.api.FilesApi
+import com.agentsanywhere.app.api.McpServerConfig
 import com.agentsanywhere.app.api.SessionsApi
 import com.agentsanywhere.app.api.RemoteDevice
 import com.agentsanywhere.app.api.RemoteSession
@@ -471,6 +472,44 @@ class SessionsController(
             days < 7 -> "${days}d"
             days < 365 -> "${days / 7}w"
             else -> "${days / 365}y"
+        }
+    }
+
+    suspend fun getSessionMcpServers(sessionId: String): Result<Map<String, McpServerConfig>> {
+        val serverUrl = sessionStore.readServerUrl()
+        val accessToken = sessionStore.readAccessToken()
+        if (serverUrl.isBlank() || accessToken.isBlank()) {
+            return Result.failure(IllegalStateException("Not signed in."))
+        }
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                sessionsApi.getSessionMcpServers(
+                    serverUrl = serverUrl,
+                    authorizationToken = accessToken,
+                    sessionId = sessionId,
+                )
+            }
+        }
+    }
+
+    suspend fun putSessionMcpServers(
+        sessionId: String,
+        servers: Map<String, McpServerConfig>,
+    ): Result<Map<String, McpServerConfig>> {
+        val serverUrl = sessionStore.readServerUrl()
+        val accessToken = sessionStore.readAccessToken()
+        if (serverUrl.isBlank() || accessToken.isBlank()) {
+            return Result.failure(IllegalStateException("Not signed in."))
+        }
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                sessionsApi.putSessionMcpServers(
+                    serverUrl = serverUrl,
+                    authorizationToken = accessToken,
+                    sessionId = sessionId,
+                    servers = servers,
+                )
+            }
         }
     }
 }

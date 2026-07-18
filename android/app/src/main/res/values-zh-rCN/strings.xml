@@ -452,4 +452,25 @@
     <string name="profile_account_load_failed">账号信息加载失败。</string>
     <string name="profile_sign_out_title">退出登录？</string>
     <string name="profile_sign_out_body">退出后需要重新登录才能继续使用此服务器。</string>
+    <string name="connector_mcp_title">MCP 服务器</string>
+    <string name="connector_mcp_add_server">添加服务器</string>
+    <string name="connector_mcp_no_servers">尚未配置 MCP 服务器。</string>
+    <string name="connector_mcp_server_name">服务器名称</string>
+    <string name="connector_mcp_type">类型</string>
+    <string name="connector_mcp_command">命令</string>
+    <string name="connector_mcp_args">参数（每行一个）</string>
+    <string name="connector_mcp_url">URL</string>
+    <string name="connector_mcp_env">环境变量</string>
+    <string name="connector_mcp_headers">请求头</string>
+    <string name="connector_mcp_add_env">添加变量</string>
+    <string name="connector_mcp_add_header">添加请求头</string>
+    <string name="connector_mcp_load_failed">无法加载 MCP 服务器配置。</string>
+    <string name="connector_mcp_save_failed">无法保存 MCP 服务器配置。</string>
+    <string name="connector_mcp_name_required">服务器名称不能为空。</string>
+    <string name="connector_mcp_name_unique">服务器名称不能重复。</string>
+    <string name="connector_mcp_command_required">stdio 服务器必须填写命令。</string>
+    <string name="connector_mcp_url_required">HTTP/SSE 服务器必须填写 URL。</string>
+    <string name="session_mcp_title">会话 MCP 服务器</string>
+    <string name="session_mcp_load_failed">无法加载会话 MCP 服务器配置。</string>
+    <string name="session_mcp_save_failed">无法保存会话 MCP 服务器配置。</string>
 </resources>

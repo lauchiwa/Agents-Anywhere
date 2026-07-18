@@ -73,6 +73,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import com.agentsanywhere.app.R
 import com.agentsanywhere.app.api.ApprovalSelectionInput
+import com.agentsanywhere.app.api.McpServerConfig
 import com.agentsanywhere.app.api.UploadFilePart
 import com.agentsanywhere.app.feature.files.FilesController
 import com.agentsanywhere.app.feature.sessiondetail.ApprovalQuestion
@@ -112,6 +113,8 @@ fun SessionDetailScreen(
     terminalPool: RemoteTerminalPool,
     composerDraftStore: SessionComposerDraftStore,
     onSessionChanged: (AgentSession) -> Unit = {},
+    onLoadMcpServers: suspend (String) -> Result<Map<String, McpServerConfig>> = { Result.failure(UnsupportedOperationException()) },
+    onSaveMcpServers: suspend (String, Map<String, McpServerConfig>) -> Result<Map<String, McpServerConfig>> = { _, _ -> Result.failure(UnsupportedOperationException()) },
 ) {
     val colors = LocalAAColors.current
     val darkMode = colors.canvas == Color(0xFF09090B)
@@ -140,6 +143,7 @@ fun SessionDetailScreen(
     var showCamera by remember(sessionId) { mutableStateOf(false) }
     var showDeviceOffline by remember(sessionId) { mutableStateOf(false) }
     var showRuntimeSettings by remember(sessionId) { mutableStateOf(false) }
+    var showMcpServers by remember(sessionId) { mutableStateOf(false) }
     var pendingOpenFilePath by remember(sessionId) { mutableStateOf<String?>(null) }
     var terminalVerticalDragActive by remember(sessionId) { mutableStateOf(false) }
     var composerHeightPx by remember { mutableStateOf(0) }
@@ -893,6 +897,25 @@ fun SessionDetailScreen(
                 darkMode = darkMode,
                 onDismiss = { showRuntimeSettings = false },
                 onPatch = ::patchRuntimeSetting,
+                onMcpServers = {
+                    showRuntimeSettings = false
+                    showMcpServers = true
+                },
+            )
+        }
+    }
+
+    if (showMcpServers) {
+        val session = state.session
+        if (session == null) {
+            showMcpServers = false
+        } else {
+            val sid = session.id
+            SessionMcpServersSheet(
+                sessionId = sid,
+                onDismiss = { showMcpServers = false },
+                onLoadMcpServers = { onLoadMcpServers(sid) },
+                onSaveMcpServers = { servers -> onSaveMcpServers(sid, servers) },
             )
         }
     }

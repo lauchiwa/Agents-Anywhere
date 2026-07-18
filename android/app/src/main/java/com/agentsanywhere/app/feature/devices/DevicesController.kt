@@ -2,6 +2,7 @@ package com.agentsanywhere.app.feature.devices
 
 import com.agentsanywhere.app.api.ApiException
 import com.agentsanywhere.app.api.DevicesApi
+import com.agentsanywhere.app.api.McpServerConfig
 import com.agentsanywhere.app.api.RemoteDevice
 import com.agentsanywhere.app.api.RemoteRuntimeConfigField
 import com.agentsanywhere.app.api.RemoteRuntimeConfigOption
@@ -298,6 +299,38 @@ class DevicesController(
             description = description,
             efforts = efforts?.map { it.toRuntimeConfigOption() },
         )
+    }
+
+    suspend fun getConnectorMcpServers(connectorId: String): Result<Map<String, McpServerConfig>> {
+        val auth = authSession()
+            ?: return Result.failure(IllegalStateException("Sign in again."))
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                devicesApi.getConnectorMcpServers(
+                    serverUrl = auth.serverUrl,
+                    authorizationToken = auth.accessToken,
+                    connectorId = connectorId,
+                )
+            }
+        }
+    }
+
+    suspend fun putConnectorMcpServers(
+        connectorId: String,
+        servers: Map<String, McpServerConfig>,
+    ): Result<Map<String, McpServerConfig>> {
+        val auth = authSession()
+            ?: return Result.failure(IllegalStateException("Sign in again."))
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                devicesApi.putConnectorMcpServers(
+                    serverUrl = auth.serverUrl,
+                    authorizationToken = auth.accessToken,
+                    connectorId = connectorId,
+                    servers = servers,
+                )
+            }
+        }
     }
 }
 

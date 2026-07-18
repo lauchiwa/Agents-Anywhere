@@ -769,6 +769,28 @@
       "description": "Agents Anywhere 需要一台已配对且在线的设备，才能选择工作区或开始会话。",
       "later": "稍后再说",
       "addDevice": "添加设备"
+    },
+    "mcp": {
+      "title": "MCP 服务器",
+      "addServer": "添加服务器",
+      "noServers": "未配置 MCP 服务器",
+      "serverName": "服务器名称",
+      "type": "类型",
+      "command": "命令",
+      "args": "参数（每行一个）",
+      "url": "URL",
+      "env": "环境变量",
+      "headers": "请求头",
+      "addEnv": "添加变量",
+      "addHeader": "添加请求头",
+      "save": "保存",
+      "saving": "保存中…",
+      "loadFailed": "无法加载 MCP 服务器配置",
+      "saveFailed": "无法保存 MCP 服务器配置",
+      "nameRequired": "服务器名称不能为空",
+      "nameUnique": "服务器名称不能重复",
+      "commandRequired": "命令不能为空",
+      "urlRequired": "URL 不能为空"
     }
   },
   "auth": {

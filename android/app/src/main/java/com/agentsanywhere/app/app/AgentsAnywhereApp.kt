@@ -521,6 +521,18 @@ fun AgentsAnywhereApp(
         onSessionChanged = { session ->
             sessionsState = sessionsState.withPatchedSession(session)
         },
+        onLoadConnectorMcpServers = { connectorId ->
+            devicesController.getConnectorMcpServers(connectorId)
+        },
+        onSaveConnectorMcpServers = { connectorId, servers ->
+            devicesController.putConnectorMcpServers(connectorId, servers)
+        },
+        onLoadSessionMcpServers = { sessionId ->
+            sessionsController.getSessionMcpServers(sessionId)
+        },
+        onSaveSessionMcpServers = { sessionId, servers ->
+            sessionsController.putSessionMcpServers(sessionId, servers)
+        },
         onMobileLoginQrRequested = { payload ->
             pendingMobileLoginQr = payload
             destinationName = AppDestination.QrWaiting.name
@@ -586,6 +598,10 @@ private fun AgentsAnywhereNavHost(
     onCreateSession: suspend (String, String, String, String) -> Result<com.agentsanywhere.app.model.AgentSession>,
     onListDirectory: suspend (String, String, String) -> Result<NewSessionDirectory>,
     onSessionChanged: (AgentSession) -> Unit,
+    onLoadConnectorMcpServers: suspend (String) -> Result<Map<String, com.agentsanywhere.app.api.McpServerConfig>>,
+    onSaveConnectorMcpServers: suspend (String, Map<String, com.agentsanywhere.app.api.McpServerConfig>) -> Result<Map<String, com.agentsanywhere.app.api.McpServerConfig>>,
+    onLoadSessionMcpServers: suspend (String) -> Result<Map<String, com.agentsanywhere.app.api.McpServerConfig>>,
+    onSaveSessionMcpServers: suspend (String, Map<String, com.agentsanywhere.app.api.McpServerConfig>) -> Result<Map<String, com.agentsanywhere.app.api.McpServerConfig>>,
     onMobileLoginQrRequested: (MobileLoginQrPayload) -> Unit,
     onOAuthPendingReceived: (OAuthFlowState, AppDestination) -> Unit,
     onOAuthErrorConsumed: () -> Unit,
@@ -700,6 +716,8 @@ private fun AgentsAnywhereNavHost(
                     terminalPool = remoteTerminalPool,
                     composerDraftStore = sessionComposerDraftStore,
                     onSessionChanged = onSessionChanged,
+                    onLoadMcpServers = onLoadSessionMcpServers,
+                    onSaveMcpServers = onSaveSessionMcpServers,
                 )
                 AppDestination.DeviceDetail -> DeviceDetailScreen(
                     navigate = navigate,
@@ -717,6 +735,8 @@ private fun AgentsAnywhereNavHost(
                     onPatchDeviceAgentSettings = onPatchDeviceAgentSettings,
                     onBulkSetSessionsArchived = onBulkSetSessionsArchived,
                     onArchiveAllDeviceSessions = onArchiveAllDeviceSessions,
+                    onLoadConnectorMcpServers = onLoadConnectorMcpServers,
+                    onSaveConnectorMcpServers = onSaveConnectorMcpServers,
                 )
                 AppDestination.Devices -> DevicesScreen(
                     state = sessionsState,

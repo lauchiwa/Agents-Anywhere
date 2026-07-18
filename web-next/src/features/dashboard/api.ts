@@ -42,7 +42,9 @@ import type {
   TerminalListResponse,
   TerminalResponse,
   TerminalSnapshotResult,
-  UserAgentDefaultsResponse
+  UserAgentDefaultsResponse,
+  McpServersMap,
+  McpServersResponse
 } from "@/features/dashboard/types";
 
 export type SessionStateQuery = {
@@ -771,6 +773,50 @@ export class DashboardApi {
     return this.client.patch<RuntimeSettingsResponse>(
       `/sessions/${encodeURIComponent(sessionId)}/runtime-settings`,
       { settings },
+      { token },
+    );
+  }
+
+  getConnectorMcpServers(
+    token: string,
+    connectorId: string,
+  ): Promise<McpServersResponse> {
+    return this.client.get<McpServersResponse>(
+      `/connectors/${encodeURIComponent(connectorId)}/mcp-servers`,
+      { token },
+    );
+  }
+
+  putConnectorMcpServers(
+    token: string,
+    connectorId: string,
+    servers: McpServersMap,
+  ): Promise<McpServersResponse> {
+    return this.client.put<McpServersResponse>(
+      `/connectors/${encodeURIComponent(connectorId)}/mcp-servers`,
+      { mcpServers: servers },
+      { token },
+    );
+  }
+
+  getSessionMcpServers(
+    token: string,
+    sessionId: string,
+  ): Promise<McpServersResponse> {
+    return this.client.get<McpServersResponse>(
+      `/sessions/${encodeURIComponent(sessionId)}/mcp-servers`,
+      { token },
+    );
+  }
+
+  putSessionMcpServers(
+    token: string,
+    sessionId: string,
+    servers: McpServersMap,
+  ): Promise<McpServersResponse> {
+    return this.client.put<McpServersResponse>(
+      `/sessions/${encodeURIComponent(sessionId)}/mcp-servers`,
+      { mcpServers: servers },
       { token },
     );
   }

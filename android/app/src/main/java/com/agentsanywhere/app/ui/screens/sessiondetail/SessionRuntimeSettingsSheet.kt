@@ -59,6 +59,7 @@ internal fun SessionRuntimeSettingsSheet(
     darkMode: Boolean,
     onDismiss: () -> Unit,
     onPatch: (String, String?) -> Unit,
+    onMcpServers: () -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var page by remember(session.id) { mutableStateOf(RuntimeSheetPage.Model) }
@@ -91,6 +92,7 @@ internal fun SessionRuntimeSettingsSheet(
                         state = state,
                         palette = palette,
                         onDismiss = onDismiss,
+                        onMcpServers = onMcpServers,
                         onOpenModeEffort = { page = RuntimeSheetPage.ModeEffort },
                         onPatch = onPatch,
                     )
@@ -113,6 +115,7 @@ private fun ModelPage(
     state: RuntimeSettingsState,
     palette: RuntimeSheetPalette,
     onDismiss: () -> Unit,
+    onMcpServers: () -> Unit,
     onOpenModeEffort: () -> Unit,
     onPatch: (String, String?) -> Unit,
 ) {
@@ -144,6 +147,23 @@ private fun ModelPage(
         }
     }
 
+    DividerLine(palette.divider)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(50.dp)
+            .noRippleClickable(onClick = onMcpServers),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.session_mcp_title),
+            modifier = Modifier.weight(1f),
+            color = palette.primaryText,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        SheetChevronRightGlyph(palette.secondaryText)
+    }
     DividerLine(palette.divider)
     Row(
         modifier = Modifier

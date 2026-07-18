@@ -643,3 +643,20 @@ export type BulkArchiveResponse = {
   notFound: string[];
   serverTime: string;
 };
+
+export type McpServerType = "stdio" | "http" | "sse";
+
+export interface McpServerConfig {
+  type: McpServerType;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+}
+
+export type McpServersMap = Record<string, McpServerConfig>;
+
+export interface McpServersResponse {
+  mcpServers: McpServersMap;
+}

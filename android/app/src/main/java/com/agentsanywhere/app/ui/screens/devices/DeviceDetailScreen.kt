@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agentsanywhere.app.R
+import com.agentsanywhere.app.api.McpServerConfig
 import com.agentsanywhere.app.feature.devices.DeviceDetailAgent
 import com.agentsanywhere.app.feature.devices.DeviceDetailState
 import com.agentsanywhere.app.feature.devices.DeviceAgentScanResult
@@ -60,6 +61,7 @@ import com.composables.icons.lucide.List as ListIcon
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Ellipsis
 import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.Server
 import com.composables.icons.lucide.Settings
 import com.composables.icons.lucide.Trash2
 import kotlinx.coroutines.launch
@@ -83,6 +85,8 @@ fun DeviceDetailScreen(
     onPatchDeviceAgentSettings: suspend (String, String, Map<String, Any?>) -> Result<RuntimeSettingsState>,
     onBulkSetSessionsArchived: suspend (List<String>, Boolean) -> Result<List<AgentSession>>,
     onArchiveAllDeviceSessions: suspend (String, Boolean, String) -> Result<List<AgentSession>>,
+    onLoadConnectorMcpServers: suspend (String) -> Result<Map<String, McpServerConfig>>,
+    onSaveConnectorMcpServers: suspend (String, Map<String, McpServerConfig>) -> Result<Map<String, McpServerConfig>>,
 ) {
     val context = LocalContext.current
     val detail = remember(state, selectedDeviceId) { state.deviceDetailState(selectedDeviceId) }
@@ -98,6 +102,7 @@ fun DeviceDetailScreen(
     var actionsSheetOpen by remember { mutableStateOf(false) }
     var addAgentSheetOpen by remember { mutableStateOf(false) }
     var settingsAgent by remember { mutableStateOf<DeviceDetailAgent?>(null) }
+    var mcpSheetOpen by remember { mutableStateOf(false) }
     var sessionsFilter by remember(selectedDeviceId) { mutableStateOf(DeviceSessionsFilter.Active) }
     var sessionSelectMode by remember(selectedDeviceId) { mutableStateOf(false) }
     var selectedSessionIds by remember(selectedDeviceId) { mutableStateOf(setOf<String>()) }
@@ -238,6 +243,7 @@ fun DeviceDetailScreen(
                         AgentsSection(
                             detail = detail,
                             onAddAgent = { addAgentSheetOpen = true },
+                            onMcpServers = { mcpSheetOpen = true },
                             onOpenSettings = { agent -> settingsAgent = agent },
                             onDeleteAgent = { agent ->
                                 actionError = null
@@ -397,6 +403,16 @@ fun DeviceDetailScreen(
             onPatchSettings = onPatchDeviceAgentSettings,
         )
     }
+
+    if (mcpSheetOpen && detail.device != null) {
+        val deviceId = detail.device.id
+        ConnectorMcpServersSheet(
+            connectorId = deviceId,
+            onDismiss = { mcpSheetOpen = false },
+            onLoadMcpServers = { onLoadConnectorMcpServers(deviceId) },
+            onSaveMcpServers = { servers -> onSaveConnectorMcpServers(deviceId, servers) },
+        )
+    }
 }
 
 private data class DeviceArchiveAllRequest(
@@ -517,18 +533,27 @@ private fun DeviceStatusTag(online: Boolean, darkMode: Boolean) {
 private fun AgentsSection(
     detail: DeviceDetailState,
     onAddAgent: () -> Unit,
+    onMcpServers: () -> Unit,
     onOpenSettings: (DeviceDetailAgent) -> Unit,
     onDeleteAgent: (DeviceDetailAgent) -> Unit,
 ) {
     SectionBlock(
         title = stringResource(R.string.device_detail_agents_section),
         action = {
-            SmallActionButton(
-                icon = Lucide.Plus,
-                label = stringResource(R.string.device_detail_add_agent),
-                danger = false,
-                onClick = onAddAgent,
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SmallActionButton(
+                    icon = Lucide.Server,
+                    label = stringResource(R.string.connector_mcp_title),
+                    danger = false,
+                    onClick = onMcpServers,
+                )
+                SmallActionButton(
+                    icon = Lucide.Plus,
+                    label = stringResource(R.string.device_detail_add_agent),
+                    danger = false,
+                    onClick = onAddAgent,
+                )
+            }
         },
     ) {
         if (detail.agents.isEmpty()) {

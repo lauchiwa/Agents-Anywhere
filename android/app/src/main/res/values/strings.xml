@@ -452,4 +452,25 @@
     <string name="profile_account_load_failed">Could not load account.</string>
     <string name="profile_sign_out_title">Sign out?</string>
     <string name="profile_sign_out_body">You will need to sign in again to use this server.</string>
+    <string name="connector_mcp_title">MCP Servers</string>
+    <string name="connector_mcp_add_server">Add Server</string>
+    <string name="connector_mcp_no_servers">No MCP servers configured.</string>
+    <string name="connector_mcp_server_name">Server name</string>
+    <string name="connector_mcp_type">Type</string>
+    <string name="connector_mcp_command">Command</string>
+    <string name="connector_mcp_args">Args (one per line)</string>
+    <string name="connector_mcp_url">URL</string>
+    <string name="connector_mcp_env">Environment variables</string>
+    <string name="connector_mcp_headers">Headers</string>
+    <string name="connector_mcp_add_env">Add variable</string>
+    <string name="connector_mcp_add_header">Add header</string>
+    <string name="connector_mcp_load_failed">Could not load MCP servers.</string>
+    <string name="connector_mcp_save_failed">Could not save MCP servers.</string>
+    <string name="connector_mcp_name_required">Server name is required.</string>
+    <string name="connector_mcp_name_unique">Server names must be unique.</string>
+    <string name="connector_mcp_command_required">Command is required for stdio servers.</string>
+    <string name="connector_mcp_url_required">URL is required for HTTP/SSE servers.</string>
+    <string name="session_mcp_title">Session MCP Servers</string>
+    <string name="session_mcp_load_failed">Could not load session MCP servers.</string>
+    <string name="session_mcp_save_failed">Could not save session MCP servers.</string>
 </resources>

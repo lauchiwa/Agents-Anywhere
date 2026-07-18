@@ -197,4 +197,33 @@ class DevicesApi(
             schemaVersion = optInt("schemaVersion", 0),
         )
     }
+
+    fun getConnectorMcpServers(
+        serverUrl: String,
+        authorizationToken: String,
+        connectorId: String,
+    ): Map<String, McpServerConfig> {
+        val response = client.getJson(
+            serverUrl = serverUrl,
+            path = "/connectors/${connectorId.urlEncode()}/mcp-servers",
+            authorizationToken = authorizationToken,
+        )
+        return response.optJSONObject("mcpServers")?.toMcpServersMap() ?: emptyMap()
+    }
+
+    fun putConnectorMcpServers(
+        serverUrl: String,
+        authorizationToken: String,
+        connectorId: String,
+        servers: Map<String, McpServerConfig>,
+    ): Map<String, McpServerConfig> {
+        val body = JSONObject().put("mcpServers", servers.toMcpServersJsonObject())
+        val response = client.putJson(
+            serverUrl = serverUrl,
+            path = "/connectors/${connectorId.urlEncode()}/mcp-servers",
+            body = body,
+            authorizationToken = authorizationToken,
+        )
+        return response.optJSONObject("mcpServers")?.toMcpServersMap() ?: emptyMap()
+    }
 }
