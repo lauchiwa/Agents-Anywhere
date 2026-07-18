@@ -833,3 +833,38 @@ Implemented full MCP server config editor for Android and Web. Android: McpServe
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: Plan Mode UX + Android maxTurns + Android 主页搜索
+
+**Date**: 2026-07-18
+**Task**: Plan Mode UX + Android maxTurns + Android 主页搜索
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+三项交付：1) EnterPlanMode/ExitPlanMode 承认卡 UX 美化——Map 图标、可读标题/描述替代 raw JSON（connector + web）。2) Android SessionRuntimeSettingsSheet 新增 maxTurns 数字字段，onPatch 签名从 String? 升级为 Any?。3) Android 主页搜索落地——Search 图标展开内联 BasicTextField，实时按 title/tag/cwd basename 过滤会话列表，X 清除收起；添加 EN/ZH 字符串资源。所有改动推送至 fork/fix/android-sse-hang。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1aa6d51` | (see git log) |
+| `52a04c9` | (see git log) |
+| `b0301cf` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

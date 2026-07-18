@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 25
+- **Total Sessions**: 26
 - **Last Active**: 2026-07-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~835 | Active |
+| `journal-1.md` | ~870 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 26 | 2026-07-18 | Plan Mode UX + Android maxTurns + Android 主页搜索 | `1aa6d51`, `52a04c9`, `b0301cf` | `fix/android-sse-hang` |
 | 25 | 2026-07-18 | Web 会话列表搜索 + Android MCP UI 收尾 | `bfd493e`, `a629e18` | `fix/android-sse-hang` |
 | 24 | 2026-07-18 | Web 工具卡 UI 精化（图标+detail） | `a629e18` | `fix/android-sse-hang` |
 | 23 | 2026-07-18 | Android+Web MCP Server Editor | `dbdf1d2`, `0e4b2e4` | `fix/android-sse-hang` |
