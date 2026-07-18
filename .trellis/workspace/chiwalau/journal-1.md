@@ -1000,3 +1000,36 @@ history_adapter 直接读取 JSONL 提取 attachment 条目（SDK 过滤了这�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 31: Android attachment parity：SkillListing / DeferredToolsDelta / InvokedSkills 渲染
+
+**Date**: 2026-07-18
+**Task**: Android attachment parity：SkillListing / DeferredToolsDelta / InvokedSkills 渲染
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+toSystemMessage() 对三种 attachment kind 补解析分支；TimelineMessageKind 加 3 枚举值 + SkillItem data class；SessionMessages 加 SkillListingCard（折叠列表）和两个 pill Composable；compileDebugKotlin 通过，无新报错。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3a465c5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
