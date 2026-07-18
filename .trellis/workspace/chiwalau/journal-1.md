@@ -934,3 +934,36 @@ Implemented full MCP server config editor for Android and Web. Android: McpServe
 ### Next Steps
 
 - None - task complete
+
+
+## Session 29: 接入 get_server_info：RPC + Slash Commands Web UI
+
+**Date**: 2026-07-18
+**Task**: 接入 get_server_info：RPC + Slash Commands Web UI
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+连接器加 get_server_info() RPC（四路降级），runtime.py 加 runtime.getServerInfo 分派；服务端加 GET /sessions/{id}/server-info；web api.ts 加 getServerInfo()；session-view-header 加 SlashCommandsSection 组件（懒加载，点击展开）。连接器 214 passed，服务端 220 passed，tsc 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e0c25a3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
