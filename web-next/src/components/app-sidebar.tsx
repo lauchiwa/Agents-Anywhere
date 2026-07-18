@@ -112,11 +112,14 @@ export function AppSidebar({ contained = false }: { contained?: boolean }) {
   }, [authSession?.accessToken, refreshData, sessions])
 
 
-  const filtered = filterSessions(
-    sessions.filter((s) => !s.archived),
-    filter,
-    search,
-  ).filter((session) => !session.pinned)
+  const filtered = React.useMemo(
+    () => filterSessions(
+      sessions.filter((s) => !s.archived),
+      filter,
+      search,
+    ).filter((session) => !session.pinned),
+    [sessions, filter, search],
+  )
 
   return (
     <Sidebar contained={contained} className="border-sidebar-border">

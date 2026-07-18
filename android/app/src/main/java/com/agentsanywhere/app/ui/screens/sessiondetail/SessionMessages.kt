@@ -78,6 +78,9 @@ import com.agentsanywhere.app.feature.sessiondetail.TimelineMessageKind
 import com.agentsanywhere.app.feature.sessiondetail.SkillItem
 import com.agentsanywhere.app.ui.designsystem.LocalAAColors
 import com.agentsanywhere.app.ui.designsystem.noRippleClickable
+import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.Lucide
 import com.valentinilk.shimmer.shimmer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -1757,10 +1760,11 @@ private fun SkillListingCard(message: TimelineMessage, darkMode: Boolean) {
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = if (expanded) "▾" else "▸",
-                color = textColor,
-                fontSize = 11.sp,
+            androidx.compose.material3.Icon(
+                imageVector = if (expanded) Lucide.ChevronDown else Lucide.ChevronRight,
+                contentDescription = null,
+                tint = textColor,
+                modifier = Modifier.size(14.dp),
             )
             Text(
                 text = "${message.skills.size} skills available",

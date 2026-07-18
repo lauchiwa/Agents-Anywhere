@@ -58,6 +58,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -106,11 +107,14 @@ import com.agentsanywhere.app.ui.screens.devices.sortedForDevicesPage
 import com.agentsanywhere.app.ui.screens.profile.ProfileSettingsDrawer
 import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.Folder
+import com.composables.icons.lucide.GitFork
 import com.composables.icons.lucide.List as ListIcon
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Monitor
 import com.composables.icons.lucide.Plus
 import com.composables.icons.lucide.Search
+import com.composables.icons.lucide.Tag
+import com.composables.icons.lucide.Trash2
 import com.composables.icons.lucide.X
 import com.composables.icons.lucide.Terminal
 import com.composables.icons.lucide.UserRound
@@ -125,7 +129,6 @@ private data class HomeSessionActionMenu(
     val rowBounds: Rect,
 )
 
-private const val SESSION_TITLE_DISPLAY_MAX_CHARS = 15
 
 @Composable
 fun HomeScreen(
@@ -484,7 +487,7 @@ private fun HomeSessionHighlightRow(session: AgentSession, darkMode: Boolean) {
                 verticalArrangement = Arrangement.Center,
             ) {
                 Text(
-                    text = session.title.sessionDisplayTitle(),
+                    text = session.title ?: "",
                     color = title,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
@@ -503,7 +506,7 @@ private fun HomeSessionHighlightRow(session: AgentSession, darkMode: Boolean) {
             }
         } else {
             Text(
-                text = session.title.sessionDisplayTitle(),
+                text = session.title ?: "",
                 modifier = Modifier.weight(1f),
                 color = title,
                 fontSize = 16.sp,
@@ -572,19 +575,19 @@ private fun HomeSessionActionMenuCard(
         )
         HomeSessionActionMenuRow(
             label = stringResource(R.string.home_fork),
-            iconRes = if (darkMode) R.drawable.ic_session_action_rename_white else R.drawable.ic_session_action_rename_black,
+            icon = Lucide.GitFork,
             textColor = text,
             onClick = onFork,
         )
         HomeSessionActionMenuRow(
             label = stringResource(R.string.home_set_tag),
-            iconRes = if (darkMode) R.drawable.ic_session_action_unpin_white else R.drawable.ic_session_action_unpin_black,
+            icon = Lucide.Tag,
             textColor = text,
             onClick = onSetTag,
         )
         HomeSessionActionMenuRow(
             label = stringResource(R.string.home_delete),
-            iconRes = if (darkMode) R.drawable.ic_session_action_archive_white else R.drawable.ic_session_action_archive_black,
+            icon = Lucide.Trash2,
             textColor = Color(0xFFDC2626),
             onClick = onDelete,
         )
@@ -622,6 +625,42 @@ private fun HomeSessionActionMenuRow(
             painter = androidx.compose.ui.res.painterResource(iconRes),
             contentDescription = null,
             modifier = Modifier.size(22.dp),
+        )
+    }
+}
+
+@Composable
+private fun HomeSessionActionMenuRow(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    textColor: Color,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(50.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            color = textColor,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 20.sp,
+        )
+        androidx.compose.material3.Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = textColor,
+            modifier = Modifier.size(20.dp),
         )
     }
 }
@@ -732,11 +771,6 @@ private fun HomeRenameSessionDialog(
             }
         }
     }
-}
-
-private fun String.sessionDisplayTitle(): String {
-    if (length <= SESSION_TITLE_DISPLAY_MAX_CHARS) return this
-    return "${take(SESSION_TITLE_DISPLAY_MAX_CHARS).trimEnd()}..."
 }
 
 private fun EditText.configureRenameInput(
@@ -1419,8 +1453,8 @@ private fun SessionList(
     onSessionLongPress: (AgentSession, Rect) -> Unit,
     onOpenSession: (AgentSession) -> Unit,
 ) {
-    var pinnedExpanded by remember(sessions) { mutableStateOf(true) }
-    var recentExpanded by remember(sessions) { mutableStateOf(true) }
+    var pinnedExpanded by rememberSaveable { mutableStateOf(true) }
+    var recentExpanded by rememberSaveable { mutableStateOf(true) }
     val pinned = remember(sessions) { SessionsState(sessions = sessions).pinnedSessions }
     val recent = remember(sessions) { SessionsState(sessions = sessions).recentSessions }
 
@@ -1598,7 +1632,7 @@ private fun HomePinnedSessionRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
-                    text = session.title.sessionDisplayTitle(),
+                    text = session.title ?: "",
                     color = LocalAAColors.current.inkSoft,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
@@ -1645,7 +1679,7 @@ private fun HomeRecentSessionRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = session.title.sessionDisplayTitle(),
+                text = session.title ?: "",
                 color = LocalAAColors.current.inkSoft,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,

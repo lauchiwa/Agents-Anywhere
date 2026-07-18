@@ -77,7 +77,7 @@ function PermissionCard({
   const isPlanMode = toolName === "EnterPlanMode" || toolName === "ExitPlanMode"
   const CardIcon = isPlanMode ? Map : ShieldCheck
   return (
-    <div className={cn("rounded-xl border border-border bg-muted/25 p-3", compact && "rounded-lg")}>
+    <div className={cn("border border-border bg-muted/25 p-3", compact ? "rounded-lg" : "rounded-xl")}>
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
         <div className="flex min-w-0 gap-2">
           <CardIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -186,7 +186,7 @@ function QuestionCard({
   }
 
   return (
-    <div className={cn("rounded-xl border border-border bg-muted/25 p-3", compact && "rounded-lg")}>
+    <div className={cn("border border-border bg-muted/25 p-3", compact ? "rounded-lg" : "rounded-xl")}>
       <div className="flex min-w-0 gap-2">
         <MessageCircleQuestion className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
