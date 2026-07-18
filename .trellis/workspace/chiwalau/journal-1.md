@@ -666,3 +666,36 @@ Added Fork, Set Tag, Delete to Android home screen long-press menu. Full stack: 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: Web maxBudgetUsd 预算输入 UI
+
+**Date**: 2026-07-18
+**Task**: Web maxBudgetUsd 预算输入 UI
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+SessionComposer 工具栏新增 Budget 按钮：未设置显示 No limit，点击展开 inline 数字输入框，失焦/Enter 保存，× 清除。值通过扩展后的 onSend options 参数透传至 sendSessionMessage.maxBudgetUsd。tsc 通过，en+zh-CN i18n 完整。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4fc6ea2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
