@@ -967,3 +967,36 @@ Implemented full MCP server config editor for Android and Web. Android: McpServe
 ### Next Steps
 
 - None - task complete
+
+
+## Session 30: 解析 attachment 通道：skill_listing / deferred_tools_delta / invoked_skills
+
+**Date**: 2026-07-18
+**Task**: 解析 attachment 通道：skill_listing / deferred_tools_delta / invoked_skills
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+history_adapter 直接读取 JSONL 提取 attachment 条目（SDK 过滤了这些），归一化三种子类型为 system timeline item；Web 加三个渲染组件（SkillListingEntry 折叠列表、DeferredToolsDeltaEntry badge、InvokedSkillsEntry badge）；20 个新单元测试，连接器 234 passed，tsc 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5139350` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

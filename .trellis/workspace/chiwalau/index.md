@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 29
+- **Total Sessions**: 30
 - **Last Active**: 2026-07-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~969 | Active |
+| `journal-1.md` | ~1002 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 30 | 2026-07-18 | 解析 attachment 通道：skill_listing / deferred_tools_delta / invoked_skills | `5139350` | `fix/android-sse-hang` |
 | 29 | 2026-07-18 | 接入 get_server_info：RPC + Slash Commands Web UI | `e0c25a3` | `fix/android-sse-hang` |
 | 28 | 2026-07-18 | 通知卡复制按钮（Web+Android） | `d3e4a64` | `fix/android-sse-hang` |
 | 27 | 2026-07-18 | Android maxBudgetUsd 预算 chip | `47d0b50` | `fix/android-sse-hang` |
