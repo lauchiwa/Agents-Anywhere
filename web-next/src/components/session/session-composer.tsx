@@ -1,8 +1,10 @@
 "use client"
 
-import { ArrowUp, Check, ChevronDown, Loader2, Square } from "lucide-react"
+import React from "react"
+import { ArrowUp, Check, ChevronDown, Loader2, Square, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,7 +66,7 @@ export function SessionComposer({
   runtimeSettingsBusy: boolean
   onPatchRuntimeSettings: (settings: Record<string, unknown>) => void
   onValueChange: (value: string) => void
-  onSend: (content: string, attachments: AttachedFile[]) => Promise<boolean>
+  onSend: (content: string, attachments: AttachedFile[], options?: { maxBudgetUsd?: number | null }) => Promise<boolean>
   onInterrupt: () => void
   onToggleTakeover: () => void
 }) {
@@ -72,6 +74,9 @@ export function SessionComposer({
   const tNew = useTranslations("dashboard.new")
   const { attachments, isDragging, add, remove, clear, onDragEnter, onDragLeave, onDragOver, onDrop } =
     useAttachments()
+  const [maxBudgetUsd, setMaxBudgetUsd] = React.useState<number | null>(null)
+  const [budgetEditing, setBudgetEditing] = React.useState(false)
+  const [budgetDraft, setBudgetDraft] = React.useState("")
   const isBusy = session.status === "running" || session.status === "waiting_approval"
   const connectorOnline = session.connectorStatus === "online"
   const canSend =
@@ -131,7 +136,23 @@ export function SessionComposer({
     const files = attachments
     onValueChange("")
     clear()
-    await onSend(text, files)
+    await onSend(text, files, maxBudgetUsd != null ? { maxBudgetUsd } : undefined)
+  }
+
+  const commitBudget = () => {
+    const parsed = parseFloat(budgetDraft)
+    if (!isNaN(parsed) && parsed >= 0) {
+      setMaxBudgetUsd(parsed)
+    } else {
+      setMaxBudgetUsd(null)
+    }
+    setBudgetEditing(false)
+  }
+
+  const clearBudget = () => {
+    setMaxBudgetUsd(null)
+    setBudgetEditing(false)
+    setBudgetDraft("")
   }
 
   const primaryAction = () => {
@@ -187,6 +208,58 @@ export function SessionComposer({
               isDragging={isDragging}
               className="size-8"
             />
+            {budgetEditing ? (
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  autoFocus
+                  value={budgetDraft}
+                  onChange={(e) => setBudgetDraft(e.target.value)}
+                  onBlur={commitBudget}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); commitBudget() }
+                    if (e.key === "Escape") { e.preventDefault(); setBudgetEditing(false) }
+                  }}
+                  placeholder={tSession("budgetPlaceholder")}
+                  className="h-8 w-24 rounded-xl text-sm"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 rounded-xl text-muted-foreground"
+                  onClick={clearBudget}
+                  aria-label="Clear budget"
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1 rounded-xl px-2.5 text-muted-foreground"
+                disabled={!canSend && !maxBudgetUsd}
+                onClick={() => {
+                  setBudgetDraft(maxBudgetUsd != null ? String(maxBudgetUsd) : "")
+                  setBudgetEditing(true)
+                }}
+              >
+                <span className="text-xs">$</span>
+                <span className={cn("text-sm", maxBudgetUsd != null && "text-foreground")}>
+                  {maxBudgetUsd != null ? maxBudgetUsd.toFixed(2) : tSession("budgetNoLimit")}
+                </span>
+                {maxBudgetUsd != null && (
+                  <X
+                    className="size-3 opacity-60 hover:opacity-100"
+                    onClick={(e) => { e.stopPropagation(); clearBudget() }}
+                  />
+                )}
+              </Button>
+            )}
             {hasSelectors ? (
               <>
                 {permissionField ? (

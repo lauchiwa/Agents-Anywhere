@@ -575,7 +575,11 @@ export function SessionDetail({
     token,
   ])
 
-  const handleSend = async (content: string, attachments: AttachedFile[]): Promise<boolean> => {
+  const handleSend = async (
+    content: string,
+    attachments: AttachedFile[],
+    options?: { maxBudgetUsd?: number | null },
+  ): Promise<boolean> => {
     if (!session || (!content.trim() && attachments.length === 0)) return false
     const clientMessageId = createClientId("msg")
     const messageText = content.trim() || tNew("attachmentOnlyPrompt")
@@ -609,6 +613,7 @@ export function SessionDetail({
       await dashboardApi.sendSessionMessage(token, session.id, messageText, {
         attachments: upload?.attachments.map((attachment) => ({ fileId: attachment.fileId })) ?? [],
         clientMessageId,
+        ...(options?.maxBudgetUsd != null ? { maxBudgetUsd: options.maxBudgetUsd } : {}),
       })
       await refresh({ scrollToBottom: true })
       scrollToBottomThrottled()
