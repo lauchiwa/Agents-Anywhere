@@ -600,3 +600,36 @@ Implemented session.tag RPC across all layers: sdk_adapter.tag_session (supports
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: Web context usage badge 接线修复
+
+**Date**: 2026-07-18
+**Task**: Web context usage badge 接线修复
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+mapSession 补 contextUsage 和 rateLimit 两个字段映射；ContextUsageBadge / RateLimitBadge 早已实现但因数据断路而始终隐藏，此修复后 Claude 会话头部将自动显示 token 用量 badge。仅改 2 行，TypeScript 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7c1194f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
