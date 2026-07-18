@@ -32,6 +32,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -67,6 +69,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import com.agentsanywhere.app.R
 import com.agentsanywhere.app.feature.sessiondetail.MessageAuthor
@@ -80,6 +83,7 @@ import com.agentsanywhere.app.ui.designsystem.LocalAAColors
 import com.agentsanywhere.app.ui.designsystem.noRippleClickable
 import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.Lucide
 import com.valentinilk.shimmer.shimmer
 import kotlinx.coroutines.delay
@@ -1346,7 +1350,10 @@ private fun ToolActivityCard(
         }
         if (expanded && expandable) {
             if (message.kind != TimelineMessageKind.ToolCall || message.hasToolCallDetail) {
-                DisableSelection {
+                val copyText = listOf(message.detail, message.body).filter { it.isNotBlank() }.joinToString("\n")
+                val clipboard = LocalClipboardManager.current
+                var copyDone by remember { mutableStateOf(false) }
+                Box {
                     ToolActivityDetailCard(
                         message = message,
                         darkMode = darkMode,
@@ -1356,6 +1363,26 @@ private fun ToolActivityCard(
                             .background(surface)
                             .border(1.dp, border, RoundedCornerShape(14.dp)),
                     )
+                    if (copyText.isNotBlank()) {
+                        androidx.compose.material3.IconButton(
+                            onClick = {
+                                clipboard.setText(AnnotatedString(copyText))
+                                copyDone = true
+                            },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(4.dp)
+                                .size(28.dp)
+                                .alpha(0.55f),
+                        ) {
+                            androidx.compose.material3.Icon(
+                                imageVector = Lucide.Copy,
+                                contentDescription = "Copy",
+                                tint = if (darkMode) Color(0xFFA1A1AA) else Color(0xFF7C7B76),
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                    }
                 }
             }
             if (hasChildren) {
@@ -1587,15 +1614,43 @@ private fun CommandPreviewSection(
     darkMode: Boolean,
 ) {
     val muted = if (darkMode) Color(0xFFA1A1AA) else Color(0xFF7C7B76)
+    val lineCount = text.count { it == '\n' } + 1
+    val collapsible = lineCount > 25
+    var expanded by remember(text) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            text = label,
-            color = muted,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                color = muted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+            )
+            if (collapsible) {
+                androidx.compose.material3.TextButton(
+                    onClick = { expanded = !expanded },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                    modifier = Modifier.height(20.dp),
+                ) {
+                    Text(
+                        text = if (expanded) "Collapse" else "Show all $lineCount lines",
+                        color = muted,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
+        }
+        SoraCodeBlock(
+            text = text,
+            languageHint = languageHint,
+            darkMode = darkMode,
+            fixedHeight = if (collapsible && !expanded) 360.dp else null,
         )
-        SoraCodeBlock(text = text, languageHint = languageHint, darkMode = darkMode)
     }
 }
 

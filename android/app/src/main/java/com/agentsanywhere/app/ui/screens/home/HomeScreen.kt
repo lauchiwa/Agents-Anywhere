@@ -10,6 +10,11 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -62,6 +67,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Rect
@@ -95,6 +101,7 @@ import com.agentsanywhere.app.feature.sessions.pinnedSessions
 import com.agentsanywhere.app.feature.sessions.recentSessions
 import com.agentsanywhere.app.model.AgentDevice
 import com.agentsanywhere.app.model.AgentSession
+import com.agentsanywhere.app.model.SessionStatus
 import com.agentsanywhere.app.navigation.AppDestination
 import com.agentsanywhere.app.ui.designsystem.AAToastHost
 import com.agentsanywhere.app.ui.designsystem.AAToastVisuals
@@ -1662,6 +1669,7 @@ private fun HomePinnedSessionRow(
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
         )
+        SessionStatusDot(status = session.status)
     }
 }
 
@@ -1700,7 +1708,35 @@ private fun HomeRecentSessionRow(
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
         )
+        SessionStatusDot(status = session.status)
     }
+}
+
+@Composable
+private fun SessionStatusDot(status: SessionStatus) {
+    if (status == SessionStatus.Idle) return
+    val dotColor = when (status) {
+        SessionStatus.Running -> Color(0xFF22C55E)
+        SessionStatus.WaitingApproval -> Color(0xFFFBBF24)
+        SessionStatus.Error -> Color(0xFFEF4444)
+        SessionStatus.Idle -> return
+    }
+    val alpha = if (status == SessionStatus.Running) {
+        val transition = rememberInfiniteTransition(label = "statusDot")
+        transition.animateFloat(
+            initialValue = 1f,
+            targetValue = 0.35f,
+            animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
+            label = "statusDotAlpha",
+        ).value
+    } else 1f
+    Box(
+        modifier = Modifier
+            .size(7.dp)
+            .alpha(alpha)
+            .clip(CircleShape)
+            .background(dotColor),
+    )
 }
 
 @Composable

@@ -472,9 +472,9 @@ function SessionSidebarItem({
                       : item.status === "running"
                       ? "border-emerald-500 bg-emerald-500"
                       : item.status === "error"
-                        ? "border-red-500/70"
+                        ? "border-red-500 bg-red-500"
                         : item.status === "waiting_approval"
-                          ? "border-amber-400/70"
+                          ? "border-amber-400 bg-amber-400"
                           : "border-muted-foreground/50",
                   )}
                 />

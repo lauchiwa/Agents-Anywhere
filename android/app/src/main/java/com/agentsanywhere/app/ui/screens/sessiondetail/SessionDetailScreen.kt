@@ -115,6 +115,11 @@ fun SessionDetailScreen(
     onSessionChanged: (AgentSession) -> Unit = {},
     onLoadMcpServers: suspend (String) -> Result<Map<String, McpServerConfig>> = { Result.failure(UnsupportedOperationException()) },
     onSaveMcpServers: suspend (String, Map<String, McpServerConfig>) -> Result<Map<String, McpServerConfig>> = { _, _ -> Result.failure(UnsupportedOperationException()) },
+    onForkSession: (suspend (String) -> Result<Unit>)? = null,
+    onDeleteSession: (suspend (String) -> Result<Unit>)? = null,
+    onTagSession: (suspend (String, String?) -> Result<Unit>)? = null,
+    onTogglePinSession: (suspend (String, Boolean) -> Result<Unit>)? = null,
+    onToggleArchiveSession: (suspend (String, Boolean) -> Result<Unit>)? = null,
 ) {
     val colors = LocalAAColors.current
     val darkMode = colors.canvas == Color(0xFF09090B)
@@ -145,6 +150,10 @@ fun SessionDetailScreen(
     var showDeviceOffline by remember(sessionId) { mutableStateOf(false) }
     var showRuntimeSettings by remember(sessionId) { mutableStateOf(false) }
     var showMcpServers by remember(sessionId) { mutableStateOf(false) }
+    var showSessionMenu by remember(sessionId) { mutableStateOf(false) }
+    var showDeleteConfirm by remember(sessionId) { mutableStateOf(false) }
+    var showTagDialog by remember(sessionId) { mutableStateOf(false) }
+    var tagDraft by remember(sessionId) { mutableStateOf("") }
     var pendingOpenFilePath by remember(sessionId) { mutableStateOf<String?>(null) }
     var terminalVerticalDragActive by remember(sessionId) { mutableStateOf(false) }
     var composerHeightPx by remember { mutableStateOf(0) }
@@ -853,6 +862,10 @@ fun SessionDetailScreen(
                             onRightClick = { scope.launch { pagerState.animateScrollToPage(1) } },
                             modifier = Modifier.align(Alignment.TopCenter),
                             contextUsage = state.session?.contextUsage,
+                            rateLimit = state.session?.rateLimit,
+                            onMenuClick = if (onForkSession != null || onDeleteSession != null || onTagSession != null || onTogglePinSession != null || onToggleArchiveSession != null) {
+                                { showSessionMenu = true }
+                            } else null,
                         )
                         AAToastHost(
                             hostState = snackbarHostState,
@@ -887,6 +900,114 @@ fun SessionDetailScreen(
                     onBack = { scope.launch { pagerState.animateScrollToPage(0) } },
                 )
             }
+        }
+    }
+
+    if (showSessionMenu) {
+        val session = state.session
+        if (session == null) {
+            showSessionMenu = false
+        } else {
+            AlertDialog(
+                onDismissRequest = { showSessionMenu = false },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showSessionMenu = false }) { Text(stringResource(android.R.string.cancel)) }
+                },
+                title = { Text(text = session.title ?: "", maxLines = 1) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        if (onForkSession != null) {
+                            TextButton(onClick = {
+                                showSessionMenu = false
+                                scope.launch { onForkSession(session.id) }
+                            }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_fork)) }
+                        }
+                        if (onTogglePinSession != null) {
+                            TextButton(onClick = {
+                                showSessionMenu = false
+                                scope.launch { onTogglePinSession(session.id, !session.pinned) }
+                            }, modifier = Modifier.fillMaxWidth()) {
+                                Text(stringResource(if (session.pinned) R.string.home_unpin else R.string.home_pin))
+                            }
+                        }
+                        if (onToggleArchiveSession != null) {
+                            TextButton(onClick = {
+                                showSessionMenu = false
+                                scope.launch { onToggleArchiveSession(session.id, !session.archived) }
+                            }, modifier = Modifier.fillMaxWidth()) {
+                                Text(stringResource(if (session.archived) R.string.home_unarchive else R.string.home_archive))
+                            }
+                        }
+                        if (onTagSession != null) {
+                            TextButton(onClick = {
+                                showSessionMenu = false
+                                tagDraft = session.tag ?: ""
+                                showTagDialog = true
+                            }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_set_tag)) }
+                        }
+                        if (onDeleteSession != null) {
+                            TextButton(onClick = {
+                                showSessionMenu = false
+                                showDeleteConfirm = true
+                            }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.home_delete)) }
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    if (showDeleteConfirm) {
+        val session = state.session
+        if (session == null) {
+            showDeleteConfirm = false
+        } else {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirm = false },
+                title = { Text(stringResource(R.string.home_delete)) },
+                text = { Text(session.title ?: session.id) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showDeleteConfirm = false
+                        scope.launch { onDeleteSession?.invoke(session.id) }
+                        navigate(AppDestination.Sessions)
+                    }) { Text(stringResource(R.string.home_delete)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(android.R.string.cancel)) }
+                },
+            )
+        }
+    }
+
+    if (showTagDialog) {
+        val session = state.session
+        if (session == null) {
+            showTagDialog = false
+        } else {
+            AlertDialog(
+                onDismissRequest = { showTagDialog = false },
+                title = { Text(stringResource(R.string.home_set_tag)) },
+                text = {
+                    OutlinedTextField(
+                        value = tagDraft,
+                        onValueChange = { tagDraft = it },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.home_set_tag)) },
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showTagDialog = false
+                        val tag = tagDraft.trim().ifBlank { null }
+                        scope.launch { onTagSession?.invoke(session.id, tag) }
+                    }) { Text(stringResource(android.R.string.ok)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showTagDialog = false }) { Text(stringResource(android.R.string.cancel)) }
+                },
+            )
         }
     }
 

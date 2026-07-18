@@ -718,6 +718,11 @@ private fun AgentsAnywhereNavHost(
                     onSessionChanged = onSessionChanged,
                     onLoadMcpServers = onLoadSessionMcpServers,
                     onSaveMcpServers = onSaveSessionMcpServers,
+                    onForkSession = onForkSession,
+                    onDeleteSession = onDeleteSession,
+                    onTagSession = onTagSession,
+                    onTogglePinSession = { sessionId, pinned -> onSetSessionPinned(sessionId, pinned).map { } },
+                    onToggleArchiveSession = { sessionId, archived -> onSetSessionArchived(sessionId, archived).map { } },
                 )
                 AppDestination.DeviceDetail -> DeviceDetailScreen(
                     navigate = navigate,

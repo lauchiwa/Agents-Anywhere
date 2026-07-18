@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -32,6 +34,8 @@ import com.agentsanywhere.app.R
 import com.agentsanywhere.app.model.ContextUsage
 import com.agentsanywhere.app.model.RateLimit
 import com.agentsanywhere.app.ui.designsystem.noRippleClickable
+import com.composables.icons.lucide.Ellipsis
+import com.composables.icons.lucide.Lucide
 import kotlin.math.roundToInt
 
 @Composable
@@ -43,6 +47,7 @@ internal fun SessionDetailHeader(
     modifier: Modifier = Modifier,
     contextUsage: ContextUsage? = null,
     rateLimit: RateLimit? = null,
+    onMenuClick: (() -> Unit)? = null,
 ) {
     val surface = if (darkMode) Color(0xF218181B) else Color(0xF2FFFFFF)
     val border = if (darkMode) Color(0xFF27272A) else Color(0xFFE8E5DE)
@@ -154,6 +159,17 @@ internal fun SessionDetailHeader(
             darkMode = darkMode,
             onClick = onRightClick,
         )
+        if (onMenuClick != null) {
+            val iconTint = if (darkMode) Color(0xFFA1A1AA) else Color(0xFF7C7B76)
+            IconButton(onClick = onMenuClick, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    imageVector = Lucide.Ellipsis,
+                    contentDescription = "More",
+                    tint = iconTint,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
     }
 }
 

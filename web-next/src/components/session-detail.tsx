@@ -1092,7 +1092,8 @@ function ToolRunGroup({
   ) => void
 }) {
   const tSession = useTranslations("dashboard.session")
-  const [open, setOpen] = React.useState(false)
+  const hasApproval = group.items.some((item) => approvalByTarget.has(item.id))
+  const [open, setOpen] = React.useState(hasApproval)
   const summary = toolRunSummary(group.items, tSession)
 
   if (open) {

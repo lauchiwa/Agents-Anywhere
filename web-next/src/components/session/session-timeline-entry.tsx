@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { Bell, BookOpen, ChevronDown, CircleAlert, Clock, Copy, FilePenLine, Sparkles, Wrench, Zap } from "lucide-react"
+import { Bell, BookOpen, Check, ChevronDown, CircleAlert, Clock, Copy, FilePenLine, Sparkles, Wrench, Zap } from "lucide-react"
 import dynamic from "next/dynamic"
 import { useTranslations } from "next-intl"
 
@@ -85,6 +85,7 @@ function MessageCard({ token, session, item }: { token: string; session: Session
   const isUser = item.role === "user"
   const hasAttachments = attachments.length > 0
   const showUserStatus = isUser && (item.status === "pending" || item.status === "failed")
+  const [copied, setCopied] = React.useState(false)
   const content = text ? (
     <MarkdownText text={text} token={token} session={session} />
   ) : hasAttachments ? null : (
@@ -100,17 +101,31 @@ function MessageCard({ token, session, item }: { token: string; session: Session
   )
 
   return (
-    <div className={cn("flex min-w-0 max-w-full overflow-hidden", isUser && "justify-end")}>
+    <div className={cn("group/msg flex min-w-0 max-w-full overflow-hidden", isUser && "justify-end")}>
       <div className={cn("flex min-w-0 max-w-[88%] flex-col gap-2 text-sm leading-relaxed", isUser && "items-end")}>
         {isUser ? attachmentList : null}
         {content ? (
           <div
             className={cn(
-              "min-w-0 max-w-full",
+              "relative min-w-0 max-w-full",
               isUser ? "rounded-2xl bg-secondary px-4 py-3 text-secondary-foreground" : "bg-transparent px-0 py-1",
             )}
           >
             {isUser ? <CollapsibleUserMessage>{content}</CollapsibleUserMessage> : content}
+            {!isUser && text ? (
+              <button
+                type="button"
+                aria-label={copied ? "Copied" : "Copy"}
+                onClick={() => {
+                  navigator.clipboard.writeText(text).catch(() => undefined)
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1200)
+                }}
+                className="absolute -right-7 top-0 rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover/msg:opacity-100"
+              >
+                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+              </button>
+            ) : null}
           </div>
         ) : null}
         {!isUser ? attachmentList : null}

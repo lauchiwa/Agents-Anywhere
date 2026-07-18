@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Check, ChevronDown, Clock, Code2, Copy, Cpu, ExternalLink, FilePenLine, Globe, Hammer, Loader2, OctagonX, Search, TerminalSquare } from "lucide-react"
+import { Check, ChevronDown, Clock, Code2, Copy, Cpu, ExternalLink, FilePenLine, Globe, Hammer, Loader2, Maximize2, Minimize2, OctagonX, Search, TerminalSquare } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -65,7 +65,7 @@ export function ToolCard({
   const webSearchUrl = kind === "web_search" ? (textOf(item.content.url) ?? null) : null
   const wakeupPrompt = kind === "schedule_wakeup" ? (textOf(item.content.prompt) ?? null) : null
   const title = timelineToolTitle(item, tSession)
-  const defaultOpen = Boolean(approval)
+  const defaultOpen = Boolean(approval) || item.status === "running"
 
   return (
     <Collapsible defaultOpen={defaultOpen} className="min-w-0 max-w-full overflow-hidden">
@@ -254,13 +254,29 @@ export function ToolDetailPanel({
 }
 
 export function CodePanel({ label, code, language, flush, labelClassName }: { label: string; code: string; language: string; flush?: boolean; labelClassName?: string }) {
-  return <CodePanelFrame label={label} code={code} flush={flush} labelClassName={labelClassName}>
-    {language === "diff" ? (
-      <DiffPanel code={code} maxHeight={codePanelHeight(code)} />
-    ) : (
-      <HighlightedCodeContent code={code} language={language} maxHeight={codePanelHeight(code)} />
-    )}
-  </CodePanelFrame>
+  const [expanded, setExpanded] = React.useState(false)
+  const naturalHeight = codePanelHeight(code)
+  const maxHeight = expanded ? undefined : naturalHeight
+  const canExpand = naturalHeight >= 320
+  const expandAction = canExpand ? (
+    <button
+      type="button"
+      aria-label={expanded ? "Collapse" : "Expand"}
+      className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+      onClick={() => setExpanded((v) => !v)}
+    >
+      {expanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+    </button>
+  ) : undefined
+  return (
+    <CodePanelFrame label={label} code={code} flush={flush} labelClassName={labelClassName} action={expandAction}>
+      {language === "diff" ? (
+        <DiffPanel code={code} maxHeight={maxHeight ?? naturalHeight} />
+      ) : (
+        <HighlightedCodeContent code={code} language={language} maxHeight={maxHeight ?? naturalHeight} />
+      )}
+    </CodePanelFrame>
+  )
 }
 
 function CodePanelFrame({
@@ -303,9 +319,9 @@ function CodePanelFrame({
   )
 }
 
-function HighlightedCodeContent({ code, language, maxHeight }: { code: string; language: string; maxHeight: number }) {
+function HighlightedCodeContent({ code, language, maxHeight }: { code: string; language: string; maxHeight: number | undefined }) {
   return (
-    <ScrollArea contentWide className="min-w-0" style={{ height: maxHeight, maxHeight }}>
+    <ScrollArea contentWide className="min-w-0" style={maxHeight != null ? { height: maxHeight, maxHeight } : undefined}>
       <pre className="code-mono min-w-full w-max px-3 py-2 text-xs leading-relaxed">
         <code className="code-mono whitespace-pre">{highlightCode(code, language)}</code>
       </pre>
@@ -318,10 +334,10 @@ export function JsonBlock({ value }: { value: unknown }) {
   return <CodePanel label="json" code={JSON.stringify(value, null, 2)} language="json" />
 }
 
-function DiffPanel({ code, maxHeight }: { code: string; maxHeight: number }) {
+function DiffPanel({ code, maxHeight }: { code: string; maxHeight: number | undefined }) {
   const rows = React.useMemo(() => buildDiffRows(code), [code])
   return (
-    <ScrollArea contentWide className="min-w-0" style={{ height: maxHeight, maxHeight }}>
+    <ScrollArea contentWide className="min-w-0" style={maxHeight != null ? { height: maxHeight, maxHeight } : undefined}>
       <div className="code-mono w-max min-w-full py-2 text-xs">
         {rows.map((row, index) => (
           <div

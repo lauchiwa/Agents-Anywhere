@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronDown, ChevronUp, Download, FolderOpen, Loader2, PanelLeft, SquareTerminal } from "lucide-react"
+import { Archive, ChevronDown, ChevronUp, Download, FolderOpen, GitFork, Loader2, MoreHorizontal, PanelLeft, Pin, PinOff, SquareTerminal, Tag, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -18,6 +18,30 @@ import { useTranslations } from "next-intl"
 import type { SessionView as SessionViewModel } from "@/lib/demo-api"
 import { useAuth } from "@/components/auth/auth-context"
 import { dashboardApi } from "@/features/dashboard/api"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 type PanelIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>
 
@@ -58,13 +82,20 @@ export function SessionViewHeader({
   exporting,
 }: SessionViewHeaderProps) {
   const { isMobile, toggleSidebar } = useSidebar()
-  const { renameSession } = useWorkspace()
+  const { renameSession, forkSession, deleteSession, tagSession, togglePinSession, toggleArchiveSession } = useWorkspace()
   const sidebarControls = useDashboardSidebarControls()
   const tSession = useTranslations("dashboard.session")
   const tActions = useTranslations("dashboard.actions")
+  const tCommon = useTranslations("common")
   const [editingTitle, setEditingTitle] = React.useState(false)
   const [titleDraft, setTitleDraft] = React.useState(session.title ?? "")
   const [renaming, setRenaming] = React.useState(false)
+  const [forking, setForking] = React.useState(false)
+  const [deleteOpen, setDeleteOpen] = React.useState(false)
+  const [deleting, setDeleting] = React.useState(false)
+  const [tagOpen, setTagOpen] = React.useState(false)
+  const [tagDraft, setTagDraft] = React.useState("")
+  const [tagging, setTagging] = React.useState(false)
 
   React.useEffect(() => {
     if (!editingTitle) setTitleDraft(session.title ?? "")
@@ -105,73 +136,188 @@ export function SessionViewHeader({
   }, [cancelRename, renameSession, renaming, session.id, session.title, tSession, titleDraft])
 
   return (
-    <header className="pointer-events-none absolute inset-x-0 top-0 z-10 h-14 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-b from-background/80 to-background/0" />
-      {HEADER_BLUR_LAYERS.map((layer) => (
-        <div key={layer.key} className={layer.className} style={layer.style} />
-      ))}
-      <div className="pointer-events-auto relative flex h-14 items-center gap-2 px-2">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          type="button"
-          aria-label={sidebarControls?.open === false ? tActions("expand") : tActions("collapse")}
-          onClick={toggleDashboardSidebar}
-          className="shrink-0 text-muted-foreground hover:text-foreground"
-        >
-          <PanelLeft className="size-4" />
-        </Button>
-        {editingTitle ? (
-          <Input
-            autoFocus
-            value={titleDraft}
-            onChange={(event) => setTitleDraft(event.currentTarget.value)}
-            onBlur={cancelRename}
-            onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing) return
-              if (event.key === "Enter") {
-                event.preventDefault()
-                void submitRename()
-              }
-              if (event.key === "Escape") {
-                event.preventDefault()
-                cancelRename()
-              }
-            }}
-            disabled={renaming}
-            aria-label={tSession("renameTitle")}
-            className="h-8 min-w-0 max-w-[min(28rem,40vw)] flex-1 rounded-xl text-sm"
-          />
-        ) : (
-          <button
+    <>
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-10 h-14 overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-background/80 to-background/0" />
+        {HEADER_BLUR_LAYERS.map((layer) => (
+          <div key={layer.key} className={layer.className} style={layer.style} />
+        ))}
+        <div className="pointer-events-auto relative flex h-14 items-center gap-2 px-2">
+          <Button
+            variant="ghost"
+            size="icon-sm"
             type="button"
-            className="min-w-0 truncate rounded-md px-1 text-left text-sm font-medium hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            title={tSession("renameTitle")}
-            onClick={() => {
-              setTitleDraft(session.title ?? "")
-              setEditingTitle(true)
+            aria-label={sidebarControls?.open === false ? tActions("expand") : tActions("collapse")}
+            onClick={toggleDashboardSidebar}
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+          >
+            <PanelLeft className="size-4" />
+          </Button>
+          {editingTitle ? (
+            <Input
+              autoFocus
+              value={titleDraft}
+              onChange={(event) => setTitleDraft(event.currentTarget.value)}
+              onBlur={cancelRename}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return
+                if (event.key === "Enter") {
+                  event.preventDefault()
+                  void submitRename()
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault()
+                  cancelRename()
+                }
+              }}
+              disabled={renaming}
+              aria-label={tSession("renameTitle")}
+              className="h-8 min-w-0 max-w-[min(28rem,40vw)] flex-1 rounded-xl text-sm"
+            />
+          ) : (
+            <button
+              type="button"
+              className="min-w-0 truncate rounded-md px-1 text-left text-sm font-medium hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title={tSession("renameTitle")}
+              onClick={() => {
+                setTitleDraft(session.title ?? "")
+                setEditingTitle(true)
+              }}
+            >
+              {session.title}
+            </button>
+          )}
+          <SessionMetaBadge
+            session={session}
+            connectorName={connectorName}
+            memorySnapshot={memorySnapshot}
+            onExportMemoryTimeline={onExportMemoryTimeline}
+            onExportRemoteTimeline={onExportRemoteTimeline}
+            exporting={exporting}
+          />
+          <ContextUsageBadge session={session} />
+          <RateLimitBadge session={session} />
+          <PlanModeBadge session={session} />
+          <div className="ml-auto flex items-center gap-1">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" type="button" aria-label="More actions" className="shrink-0 text-muted-foreground hover:text-foreground">
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem
+                  disabled={forking}
+                  onSelect={() => {
+                    setForking(true)
+                    forkSession(session.id).catch((err) => {
+                      toast.error(err instanceof Error ? err.message : tActions("forkFailed"))
+                    }).finally(() => setForking(false))
+                  }}
+                >
+                  <GitFork className="size-4" />
+                  {forking ? tActions("forking") : tActions("fork")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => togglePinSession(session.id)}>
+                  {session.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+                  {session.pinned ? tActions("unpin") : tActions("pin")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => toggleArchiveSession(session.id)}>
+                  <Archive className="size-4" />
+                  {session.archived ? tActions("unarchive") : tActions("archive")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => { setTagDraft(session.tag ?? ""); setTagOpen(true) }}>
+                  <Tag className="size-4" />
+                  {tActions("setTag")}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={() => setDeleteOpen(true)}
+                >
+                  <Trash2 className="size-4" />
+                  {tActions("delete")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <TogglePanelButton id="files" icon={PANEL_META.files.icon} />
+            <TogglePanelButton id="terminal" icon={PANEL_META.terminal.icon} />
+          </div>
+        </div>
+      </header>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tActions("deleteConfirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {tActions("deleteConfirmDesc", { title: session.title ?? session.id })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>{tCommon("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async (e) => {
+                e.preventDefault()
+                setDeleting(true)
+                try {
+                  await deleteSession(session.id)
+                  setDeleteOpen(false)
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : tActions("deleteFailed"))
+                } finally {
+                  setDeleting(false)
+                }
+              }}
+            >
+              {deleting ? <Loader2 className="size-4 animate-spin" /> : tActions("delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={tagOpen} onOpenChange={(open) => { if (!open) { setTagOpen(false); setTagDraft("") } }}>
+        <DialogContent className="sm:max-w-sm">
+          <form
+            className="space-y-4"
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (tagging) return
+              setTagging(true)
+              try {
+                await tagSession(session.id, tagDraft.trim() || null)
+                setTagOpen(false)
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : tActions("tagFailed"))
+              } finally {
+                setTagging(false)
+              }
             }}
           >
-            {session.title}
-          </button>
-        )}
-        <SessionMetaBadge
-          session={session}
-          connectorName={connectorName}
-          memorySnapshot={memorySnapshot}
-          onExportMemoryTimeline={onExportMemoryTimeline}
-          onExportRemoteTimeline={onExportRemoteTimeline}
-          exporting={exporting}
-        />
-        <ContextUsageBadge session={session} />
-        <RateLimitBadge session={session} />
-        <PlanModeBadge session={session} />
-        <div className="ml-auto flex items-center gap-1">
-          <TogglePanelButton id="files" icon={PANEL_META.files.icon} />
-          <TogglePanelButton id="terminal" icon={PANEL_META.terminal.icon} />
-        </div>
-      </div>
-    </header>
+            <DialogHeader>
+              <DialogTitle>{tActions("setTag")}</DialogTitle>
+            </DialogHeader>
+            <Input
+              autoFocus
+              value={tagDraft}
+              onChange={(e) => setTagDraft(e.target.value)}
+              placeholder={tActions("tagPlaceholder")}
+              disabled={tagging}
+            />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setTagOpen(false)} disabled={tagging}>
+                {tCommon("cancel")}
+              </Button>
+              <Button type="submit" disabled={tagging}>
+                {tagging ? <Loader2 className="size-4 animate-spin" /> : tCommon("save")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
