@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Check, ChevronDown, Code2, Copy, FilePenLine, Hammer, Loader2, TerminalSquare } from "lucide-react"
+import { Check, ChevronDown, Clock, Code2, Copy, Cpu, ExternalLink, FilePenLine, Globe, Hammer, Loader2, OctagonX, Search, TerminalSquare } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -62,6 +62,8 @@ export function ToolCard({
     textOf(item.content.outputText) ||
     (!isMcp ? textOf(item.content.error) : null)
   const changes = recordsOf(item.content.changes)
+  const webSearchUrl = kind === "web_search" ? (textOf(item.content.url) ?? null) : null
+  const wakeupPrompt = kind === "schedule_wakeup" ? (textOf(item.content.prompt) ?? null) : null
   const title = timelineToolTitle(item, tSession)
   const defaultOpen = Boolean(approval)
 
@@ -87,6 +89,8 @@ export function ToolCard({
             fallback={item.content}
             mcpArguments={mcpArguments}
             mcpError={mcpErrorText}
+            webSearchUrl={webSearchUrl}
+            wakeupPrompt={wakeupPrompt}
           />
           {approval ? (
             <div className="mt-2">
@@ -177,6 +181,8 @@ export function ToolDetailPanel({
   fallback,
   mcpArguments,
   mcpError,
+  webSearchUrl,
+  wakeupPrompt,
 }: {
   token: string
   session: SessionView
@@ -186,15 +192,33 @@ export function ToolDetailPanel({
   fallback: unknown
   mcpArguments?: unknown
   mcpError?: string | null
+  webSearchUrl?: string | null
+  wakeupPrompt?: string | null
 }) {
-  const hasContent = Boolean(command || output || changes.length > 0 || mcpArguments != null || mcpError != null)
+  const hasContent = Boolean(
+    command || output || changes.length > 0 || mcpArguments != null || mcpError != null ||
+    webSearchUrl || wakeupPrompt,
+  )
   if (!hasContent) return <JsonBlock value={fallback} />
   const outputLabel = mcpArguments != null ? "result" : "output"
   return (
     <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-border bg-background">
+      {webSearchUrl ? (
+        <div className="flex items-center gap-1.5 border-b px-3 py-2">
+          <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
+          <a
+            href={webSearchUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="code-mono min-w-0 flex-1 truncate text-xs text-muted-foreground hover:text-foreground hover:underline"
+          >
+            {webSearchUrl}
+          </a>
+        </div>
+      ) : null}
       {command ? <CodePanel label="command" code={command} language="bash" flush /> : null}
       {changes.length > 0 ? (
-        <div className={cn(command && "border-t")}>
+        <div className={cn((command || webSearchUrl) && "border-t")}>
           {changes.map((change, index) => (
             <FileChangeRow
               token={token}
@@ -206,17 +230,22 @@ export function ToolDetailPanel({
         </div>
       ) : null}
       {mcpArguments != null ? (
-        <div className={cn((command || changes.length > 0) && "border-t")}>
+        <div className={cn((command || changes.length > 0 || webSearchUrl) && "border-t")}>
           <CodePanel label="arguments" code={JSON.stringify(mcpArguments, null, 2)} language="json" flush />
         </div>
       ) : null}
+      {wakeupPrompt ? (
+        <div className={cn((command || changes.length > 0 || mcpArguments != null || webSearchUrl) && "border-t")}>
+          <CodePanel label="prompt" code={wakeupPrompt} language="text" flush />
+        </div>
+      ) : null}
       {output ? (
-        <div className={cn((command || changes.length > 0 || mcpArguments != null) && "border-t")}>
+        <div className={cn((command || changes.length > 0 || mcpArguments != null || webSearchUrl || wakeupPrompt) && "border-t")}>
           <CodePanel label={outputLabel} code={output} language="text" flush />
         </div>
       ) : null}
       {mcpError ? (
-        <div className={cn((command || changes.length > 0 || mcpArguments != null || output) && "border-t")}>
+        <div className={cn((command || changes.length > 0 || mcpArguments != null || output || webSearchUrl || wakeupPrompt) && "border-t")}>
           <CodePanel label="error" code={mcpError} language="text" flush labelClassName="text-destructive" />
         </div>
       ) : null}
@@ -442,6 +471,11 @@ function ToolIcon({ kind, status }: { kind: string; status: TimelineItem["status
   const className = cn("size-4", status === "failed" ? "text-destructive" : "text-muted-foreground")
   if (kind === "command") return <TerminalSquare className={className} />
   if (kind === "file_change") return <FilePenLine className={className} />
+  if (kind === "web_search") return <Globe className={className} />
+  if (kind === "mcp") return <Cpu className={className} />
+  if (kind === "tool_search") return <Search className={className} />
+  if (kind === "schedule_wakeup") return <Clock className={className} />
+  if (kind === "task_stop") return <OctagonX className={className} />
   if (status === "running") return <Loader2 className={cn(className, "animate-spin")} />
   return <Hammer className={className} />
 }
