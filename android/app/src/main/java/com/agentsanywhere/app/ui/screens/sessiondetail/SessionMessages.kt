@@ -847,7 +847,7 @@ private fun TimelineMessageRow(
             children = childrenByParent[message.id].orEmpty(),
             onOpenFile = onOpenFile,
         )
-        TimelineMessageKind.Notification -> NotificationCard(message, darkMode)
+        TimelineMessageKind.Notification -> NotificationCard(message, darkMode, onCopyMessage)
         TimelineMessageKind.System -> ToolPlaceholder(message, darkMode)
         TimelineMessageKind.Compact -> CompactSeparator(message, darkMode)
         TimelineMessageKind.Text -> when (message.author) {
@@ -1135,24 +1135,34 @@ private fun CompactSeparator(message: TimelineMessage, darkMode: Boolean) {
 }
 
 @Composable
-private fun NotificationCard(message: TimelineMessage, darkMode: Boolean) {
+private fun NotificationCard(
+    message: TimelineMessage,
+    darkMode: Boolean,
+    onCopyMessage: ((String) -> Unit)? = null,
+) {
     // CLI-initiated Notification hook (include_hook_events). A message asking for
     // the user's attention that has no other channel; render an amber-accented
-    // note distinct from ordinary tool/system output. title rides in subtitle.
+    // note distinct from ordinary tool/system output. The connector-supplied
+    // title arrives in message.title (subtitle kept as a legacy fallback).
     val accent = if (darkMode) Color(0xFFE0973A) else Color(0xFFB9791F)
     val bg = if (darkMode) Color(0x1FE0973A) else Color(0x14B9791F)
     val body = if (darkMode) Color(0xFFE4E3DE) else Color(0xFF1F1E1B)
-    val heading = message.subtitle.ifBlank { stringResource(R.string.session_notification) }
+    val heading = message.title.ifBlank { message.subtitle }.ifBlank {
+        stringResource(R.string.session_notification)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(bg)
-            .padding(horizontal = 12.dp, vertical = 9.dp),
+            .padding(start = 12.dp, end = 4.dp, top = 9.dp, bottom = 9.dp),
         horizontalArrangement = Arrangement.spacedBy(9.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             Text(
                 text = heading,
                 color = accent,
@@ -1167,6 +1177,12 @@ private fun NotificationCard(message: TimelineMessage, darkMode: Boolean) {
                     lineHeight = 18.sp,
                 )
             }
+        }
+        if (onCopyMessage != null && message.text.isNotBlank()) {
+            MessageCopyButton(
+                darkMode = darkMode,
+                onClick = { onCopyMessage(message.text.trimEnd('\r', '\n')) },
+            )
         }
     }
 }

@@ -1,6 +1,7 @@
 "use client"
 
-import { Bell, ChevronDown, CircleAlert, Clock, FilePenLine, Sparkles } from "lucide-react"
+import React from "react"
+import { Bell, ChevronDown, CircleAlert, Clock, Copy, FilePenLine, Sparkles } from "lucide-react"
 import dynamic from "next/dynamic"
 import { useTranslations } from "next-intl"
 
@@ -149,13 +150,38 @@ function NotificationEntry({ item }: { item: TimelineItem }) {
   // card, with the optional hook-supplied title above the message.
   const title = textOf(item.content.title)
   const message = textOf(item.content.message) || textOf(item.content.text)
+  const notificationType = textOf(item.content.notificationType)
+  const [copied, setCopied] = React.useState(false)
+  const copy = () => {
+    if (!message) return
+    navigator.clipboard.writeText(message).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
   return (
     <div className="flex items-start gap-2 rounded-lg border border-amber-500/35 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
       <Bell className="mt-0.5 size-4 shrink-0" />
-      <div className="min-w-0">
-        {title ? <div className="font-medium">{title}</div> : null}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          {title ? <span className="font-medium">{title}</span> : null}
+          {notificationType ? (
+            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium opacity-80">{notificationType}</span>
+          ) : null}
+        </div>
         <div className="wrap-break-word">{message || item.status}</div>
       </div>
+      {message ? (
+        <button
+          type="button"
+          onClick={copy}
+          title="Copy"
+          className="mt-0.5 shrink-0 opacity-50 transition-opacity hover:opacity-100"
+        >
+          <Copy className="size-3.5" />
+          <span className="sr-only">{copied ? "Copied" : "Copy"}</span>
+        </button>
+      ) : null}
     </div>
   )
 }
