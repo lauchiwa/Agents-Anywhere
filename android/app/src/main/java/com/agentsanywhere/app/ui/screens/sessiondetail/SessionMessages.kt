@@ -1373,6 +1373,7 @@ private fun SubagentChildren(
     darkMode: Boolean,
     listState: LazyListState,
     onOpenFile: (String) -> Unit,
+    onCopyMessage: ((String) -> Unit)? = null,
 ) {
     val rail = if (darkMode) Color(0xFF3F3F46) else Color(0xFFD8D5CE)
     Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
@@ -1400,7 +1401,7 @@ private fun SubagentChildren(
                         embedded = true,
                         onOpenFile = onOpenFile,
                     )
-                    TimelineMessageKind.Notification -> NotificationCard(child, darkMode)
+                    TimelineMessageKind.Notification -> NotificationCard(child, darkMode, onCopyMessage)
                     TimelineMessageKind.System -> ToolPlaceholder(child, darkMode)
                     TimelineMessageKind.Compact -> CompactSeparator(child, darkMode)
                     TimelineMessageKind.SkillListing -> SkillListingCard(child, darkMode)
