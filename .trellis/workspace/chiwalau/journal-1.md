@@ -799,3 +799,37 @@ Implemented full MCP server config editor for Android and Web. Android: McpServe
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: Web 会话列表搜索 + Android MCP UI 收尾
+
+**Date**: 2026-07-18
+**Task**: Web 会话列表搜索 + Android MCP UI 收尾
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+完成 web 端 sidebar 会话搜索：Search 图标展开内联输入框，实时过滤 title/tag/cwd basename，pinned 区同步过滤，Esc 清除收起；filterSessions 扩展到三字段；添加 i18n。完成工具卡片 per-kind 图标与 detail panel 渲染（web_search/mcp/tool_search/schedule_wakeup/task_stop）。Android MCP UI 六个阶段全部完成（sheet 组件、字符串资源、入口接线、回调线程化）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bfd493e` | (see git log) |
+| `a629e18` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
