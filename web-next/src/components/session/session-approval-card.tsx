@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Check, Loader2, MessageCircleQuestion, ShieldCheck, X } from "lucide-react"
+import { Check, Loader2, Map, MessageCircleQuestion, ShieldCheck, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -73,11 +73,14 @@ function PermissionCard({
   const tSession = useTranslations("dashboard.session")
   const resolving = resolvingApprovalId === approval.id
   const disabled = resolvingApprovalId !== null
+  const toolName = (approval.payload as { toolName?: string } | null)?.toolName ?? ""
+  const isPlanMode = toolName === "EnterPlanMode" || toolName === "ExitPlanMode"
+  const CardIcon = isPlanMode ? Map : ShieldCheck
   return (
     <div className={cn("rounded-xl border border-border bg-muted/25 p-3", compact && "rounded-lg")}>
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
         <div className="flex min-w-0 gap-2">
-          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <CardIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0">
             <div className="wrap-break-word text-sm font-medium">{approval.title || tSession("approvalRequested")}</div>
             {approval.description ? (

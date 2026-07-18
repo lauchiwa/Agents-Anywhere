@@ -2393,7 +2393,13 @@ def _approval_payload(
         "turnId": runtime.active_turn_id,
         "status": "pending",
         "kind": kind,
-        "title": f"Claude requests {tool_name}",
+        "title": (
+            "Enter Plan Mode"
+            if tool_name == "EnterPlanMode"
+            else "Exit Plan Mode"
+            if tool_name == "ExitPlanMode"
+            else f"Claude requests {tool_name}"
+        ),
         "description": _approval_description(tool_name, input_data),
         "payload": {"toolName": tool_name, "input": input_data},
         "choices": choices,
@@ -2450,6 +2456,11 @@ def _approval_description(tool_name: str, input_data: dict[str, Any]) -> str:
         return _optional_string(input_data.get("command")) or "Run command"
     if tool_name in {"Edit", "Write", "NotebookEdit"}:
         return _optional_string(input_data.get("file_path")) or "Modify file"
+    if tool_name == "EnterPlanMode":
+        return "Claude will outline a plan before making any changes. Approve to start planning."
+    if tool_name == "ExitPlanMode":
+        mode = _optional_string(input_data.get("permissionMode")) or "acceptEdits"
+        return f"The plan is ready. Approve to begin execution (mode: {mode})."
     return json.dumps(input_data, ensure_ascii=False, sort_keys=True)
 
 
