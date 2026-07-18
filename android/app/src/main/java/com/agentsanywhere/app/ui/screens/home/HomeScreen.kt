@@ -1508,15 +1508,24 @@ private fun HomePinnedSessionRow(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.Center,
         ) {
-            Text(
-                text = session.title.sessionDisplayTitle(),
-                color = LocalAAColors.current.inkSoft,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 20.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = session.title.sessionDisplayTitle(),
+                    color = LocalAAColors.current.inkSoft,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 20.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (!session.tag.isNullOrBlank()) {
+                    SessionTagChip(tag = session.tag)
+                }
+            }
             Text(
                 text = subtitle,
                 color = LocalAAColors.current.faint,
@@ -1545,16 +1554,25 @@ private fun HomeRecentSessionRow(
 ) {
     HomeSessionRowShell(height = 52.dp, onClick = onClick, onLongPress = onLongPress) {
         Icon(Lucide.ListIcon, contentDescription = null, tint = LocalAAColors.current.faint, modifier = Modifier.size(14.dp))
-        Text(
-            text = session.title.sessionDisplayTitle(),
+        Row(
             modifier = Modifier.weight(1f),
-            color = LocalAAColors.current.inkSoft,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            lineHeight = 20.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = session.title.sessionDisplayTitle(),
+                color = LocalAAColors.current.inkSoft,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 20.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (!session.tag.isNullOrBlank()) {
+                SessionTagChip(tag = session.tag)
+            }
+        }
         Text(
             text = session.updatedAtLabel.ifBlank { "now" },
             color = LocalAAColors.current.faint,
@@ -1562,6 +1580,29 @@ private fun HomeRecentSessionRow(
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun SessionTagChip(tag: String) {
+    val colors = LocalAAColors.current
+    val darkMode = colors.canvas == Color(0xFF09090B)
+    val chipBg = if (darkMode) Color(0xFF27272A) else Color(0xFFF0F0EE)
+    val chipText = if (darkMode) Color(0xFFA1A1AA) else Color(0xFF6B7280)
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(chipBg)
+            .padding(horizontal = 5.dp, vertical = 1.dp),
+    ) {
+        Text(
+            text = tag,
+            color = chipText,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
