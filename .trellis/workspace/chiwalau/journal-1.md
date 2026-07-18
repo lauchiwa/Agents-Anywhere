@@ -901,3 +901,36 @@ Implemented full MCP server config editor for Android and Web. Android: McpServe
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: 通知卡复制按钮（Web+Android）
+
+**Date**: 2026-07-18
+**Task**: 通知卡复制按钮（Web+Android）
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+为 Notification hook 通知卡在 Web 和 Android 两端加复制按钮；Web 端同时展示 notificationType badge；顺带修复 Android NotificationCard 只读 subtitle 导致连接器传来的 title 从不显示的既有 bug。两端构建/typecheck 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d3e4a64` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

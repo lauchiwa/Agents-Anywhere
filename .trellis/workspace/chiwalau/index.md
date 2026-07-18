@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 27
+- **Total Sessions**: 28
 - **Last Active**: 2026-07-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~903 | Active |
+| `journal-1.md` | ~936 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 28 | 2026-07-18 | 通知卡复制按钮（Web+Android） | `d3e4a64` | `fix/android-sse-hang` |
 | 27 | 2026-07-18 | Android maxBudgetUsd 预算 chip | `47d0b50` | `fix/android-sse-hang` |
 | 26 | 2026-07-18 | Plan Mode UX + Android maxTurns + Android 主页搜索 | `1aa6d51`, `52a04c9`, `b0301cf` | `fix/android-sse-hang` |
 | 25 | 2026-07-18 | Web 会话列表搜索 + Android MCP UI 收尾 | `bfd493e`, `a629e18` | `fix/android-sse-hang` |
