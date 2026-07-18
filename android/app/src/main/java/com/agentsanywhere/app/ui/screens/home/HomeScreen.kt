@@ -28,6 +28,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -73,6 +76,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -106,6 +111,7 @@ import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Monitor
 import com.composables.icons.lucide.Plus
 import com.composables.icons.lucide.Search
+import com.composables.icons.lucide.X
 import com.composables.icons.lucide.Terminal
 import com.composables.icons.lucide.UserRound
 import com.valentinilk.shimmer.shimmer
@@ -159,6 +165,8 @@ fun HomeScreen(
     var taggingSession by remember { mutableStateOf<AgentSession?>(null) }
     var deletingSession by remember { mutableStateOf<AgentSession?>(null) }
     var profileOpen by remember { mutableStateOf(false) }
+    var searchActive by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
 
     fun showToast(message: String, isError: Boolean = false) {
         scope.launch {
@@ -191,7 +199,11 @@ fun HomeScreen(
                 onRefresh = onRefresh,
                 onTabSelected = onTabSelected,
                 onProfile = { profileOpen = true },
-                onSearch = { showToast(context.getString(R.string.home_search_coming_soon)) },
+                onSearch = { searchActive = true },
+                searchActive = searchActive,
+                searchQuery = searchQuery,
+                onSearchQueryChange = { searchQuery = it },
+                onSearchClose = { searchActive = false; searchQuery = "" },
                 onSessionLongPress = { session, bounds -> actionMenu = HomeSessionActionMenu(session, bounds) },
                 onOpenSession = onOpenSession,
                 onOpenDevice = onOpenDevice,
@@ -918,6 +930,10 @@ private fun HomeContent(
     onTabSelected: (HomeTab) -> Unit,
     onProfile: () -> Unit,
     onSearch: () -> Unit,
+    searchActive: Boolean,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    onSearchClose: () -> Unit,
     onSessionLongPress: (AgentSession, Rect) -> Unit,
     onOpenSession: (AgentSession) -> Unit,
     onOpenDevice: (AgentDevice) -> Unit,
@@ -936,7 +952,14 @@ private fun HomeContent(
             .padding(start = 18.dp, top = 6.dp, end = 18.dp),
         verticalArrangement = Arrangement.spacedBy(15.dp),
     ) {
-        HomeHeader(onProfile = onProfile, onSearch = onSearch)
+        HomeHeader(
+            onProfile = onProfile,
+            onSearch = onSearch,
+            searchActive = searchActive,
+            searchQuery = searchQuery,
+            onSearchQueryChange = onSearchQueryChange,
+            onSearchClose = onSearchClose,
+        )
         QuickEntries(
             onDevicesClick = { navigate(AppDestination.Devices) },
             onTerminalClick = { navigate(AppDestination.Terminal) },
@@ -964,6 +987,7 @@ private fun HomeContent(
                 state = state,
                 tab = selectedTab,
                 darkMode = darkMode,
+                searchQuery = searchQuery,
                 onSessionLongPress = onSessionLongPress,
                 onOpenSession = onOpenSession,
                 onOpenDevice = onOpenDevice,
@@ -985,10 +1009,22 @@ private fun HomeContent(
 }
 
 @Composable
-private fun HomeHeader(onProfile: () -> Unit, onSearch: () -> Unit) {
+private fun HomeHeader(
+    onProfile: () -> Unit,
+    onSearch: () -> Unit,
+    searchActive: Boolean,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    onSearchClose: () -> Unit,
+) {
     val colors = LocalAAColors.current
     val darkMode = colors.canvas == Color(0xFF09090B)
     val icon = if (darkMode) Color(0xFFFAFAFA) else Color(0xFF1C1C1E)
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(searchActive) {
+        if (searchActive) focusRequester.requestFocus()
+    }
 
     Row(
         modifier = Modifier
@@ -1010,19 +1046,56 @@ private fun HomeHeader(onProfile: () -> Unit, onSearch: () -> Unit) {
                 .height(40.dp),
             contentAlignment = Alignment.Center,
         ) {
-            AAWordmark(
-                color = colors.ink,
-                fontSize = 31.sp,
-                lineHeight = 40.sp,
+            if (searchActive) {
+                BasicTextField(
+                    value = searchQuery,
+                    onValueChange = onSearchQueryChange,
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        color = colors.ink,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                    ),
+                    keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester),
+                    decorationBox = { inner ->
+                        if (searchQuery.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.home_search_placeholder),
+                                color = colors.ink.copy(alpha = 0.4f),
+                                fontSize = 16.sp,
+                            )
+                        }
+                        inner()
+                    },
+                )
+            } else {
+                AAWordmark(
+                    color = colors.ink,
+                    fontSize = 31.sp,
+                    lineHeight = 40.sp,
+                )
+            }
+        }
+        if (searchActive) {
+            RoundLucideButton(
+                icon = Lucide.X,
+                iconColor = icon,
+                surface = Color.Transparent,
+                border = Color.Transparent,
+                onClick = onSearchClose,
+            )
+        } else {
+            RoundLucideButton(
+                icon = Lucide.Search,
+                iconColor = icon,
+                surface = Color.Transparent,
+                border = Color.Transparent,
+                onClick = onSearch,
             )
         }
-        RoundLucideButton(
-            icon = Lucide.Search,
-            iconColor = icon,
-            surface = Color.Transparent,
-            border = Color.Transparent,
-            onClick = onSearch,
-        )
     }
 }
 
@@ -1190,6 +1263,7 @@ private fun HomeList(
     state: SessionsState,
     tab: HomeTab,
     darkMode: Boolean,
+    searchQuery: String,
     onSessionLongPress: (AgentSession, Rect) -> Unit,
     onOpenSession: (AgentSession) -> Unit,
     onOpenDevice: (AgentDevice) -> Unit,
@@ -1197,7 +1271,18 @@ private fun HomeList(
     onPairDevice: () -> Unit,
 ) {
     val devices = remember(state.devices) { state.devices.sortedForDevicesPage() }
-    val sessions = if (tab == HomeTab.Active) state.sessions else state.archivedSessions
+    val rawSessions = if (tab == HomeTab.Active) state.sessions else state.archivedSessions
+    val sessions = remember(rawSessions, searchQuery) {
+        if (searchQuery.isBlank()) rawSessions
+        else {
+            val q = searchQuery.trim().lowercase()
+            rawSessions.filter { s ->
+                s.title.lowercase().contains(q) ||
+                    (s.tag?.lowercase()?.contains(q) == true) ||
+                    (s.cwd?.substringAfterLast('/')?.lowercase()?.contains(q) == true)
+            }
+        }
+    }
     val hasAnySessions = state.sessions.isNotEmpty() || state.archivedSessions.isNotEmpty()
     when {
         state.isLoading && !state.hasLoaded -> HomeLoadingState()

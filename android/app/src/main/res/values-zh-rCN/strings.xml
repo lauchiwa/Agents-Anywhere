@@ -90,6 +90,7 @@
     <string name="qr_waiting">等待网页端确认...</string>
 
     <string name="home_search_coming_soon">搜索功能即将推出。</string>
+    <string name="home_search_placeholder">搜索会话…</string>
     <string name="home_session_pinned">会话已置顶。</string>
     <string name="home_session_unpinned">会话已取消置顶。</string>
     <string name="home_pin_update_failed">无法更新置顶状态。</string>
