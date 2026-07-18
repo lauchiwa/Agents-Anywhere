@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -143,6 +144,9 @@ fun HomeScreen(
     onRenameSession: suspend (String, String) -> Result<AgentSession>,
     onSetSessionPinned: suspend (String, Boolean) -> Result<AgentSession>,
     onSetSessionArchived: suspend (String, Boolean) -> Result<AgentSession>,
+    onForkSession: suspend (String) -> Result<Unit>,
+    onDeleteSession: suspend (String) -> Result<Unit>,
+    onTagSession: suspend (String, String?) -> Result<Unit>,
     onOpenSession: (AgentSession) -> Unit,
     onOpenDevice: (AgentDevice) -> Unit,
     onPairDevice: () -> Unit,
@@ -152,6 +156,8 @@ fun HomeScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var actionMenu by remember { mutableStateOf<HomeSessionActionMenu?>(null) }
     var renamingSession by remember { mutableStateOf<AgentSession?>(null) }
+    var taggingSession by remember { mutableStateOf<AgentSession?>(null) }
+    var deletingSession by remember { mutableStateOf<AgentSession?>(null) }
     var profileOpen by remember { mutableStateOf(false) }
 
     fun showToast(message: String, isError: Boolean = false) {
@@ -224,6 +230,26 @@ fun HomeScreen(
                                 }
                         }
                     },
+                    onFork = {
+                        val session = menu.session
+                        actionMenu = null
+                        scope.launch {
+                            onForkSession(session.id)
+                                .onSuccess {
+                                    onRefresh()
+                                    showToast(context.getString(R.string.home_session_forked))
+                                }
+                                .onFailure { showToast(it.message ?: context.getString(R.string.home_fork_failed), isError = true) }
+                        }
+                    },
+                    onSetTag = {
+                        actionMenu = null
+                        taggingSession = menu.session
+                    },
+                    onDelete = {
+                        actionMenu = null
+                        deletingSession = menu.session
+                    },
                 )
             }
             ProfileSettingsDrawer(
@@ -268,6 +294,93 @@ fun HomeScreen(
             },
         )
     }
+
+    taggingSession?.let { session ->
+        HomeTagSessionDialog(
+            session = session,
+            onDismiss = { taggingSession = null },
+            onSave = { tag ->
+                scope.launch {
+                    onTagSession(session.id, tag.takeIf { it.isNotBlank() })
+                        .onSuccess {
+                            taggingSession = null
+                            showToast(context.getString(R.string.home_session_tagged))
+                        }
+                        .onFailure { showToast(it.message ?: context.getString(R.string.home_tag_failed), isError = true) }
+                }
+            },
+        )
+    }
+
+    deletingSession?.let { session ->
+        val colors = LocalAAColors.current
+        val darkMode = colors.canvas == Color(0xFF09090B)
+        val shape = RoundedCornerShape(26.dp)
+        val surface = if (darkMode) Color(0xFF18181B) else Color.White
+        val secondaryButton = if (darkMode) Color(0xFF27272A) else Color(0xFFF3F3F3)
+        Dialog(
+            onDismissRequest = { deletingSession = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 22.dp)
+                    .widthIn(max = 380.dp)
+                    .shadow(34.dp, shape, ambientColor = Color(0x33000000), spotColor = Color(0x33000000))
+                    .clip(shape)
+                    .background(surface)
+                    .border(1.dp, colors.border, shape)
+                    .padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.home_delete_confirm_title),
+                    color = colors.ink,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    lineHeight = 29.sp,
+                )
+                Text(
+                    text = stringResource(R.string.home_delete_confirm_message),
+                    color = colors.ink,
+                    fontSize = 15.sp,
+                    lineHeight = 20.sp,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    HomeDialogButton(
+                        label = stringResource(R.string.common_cancel),
+                        background = secondaryButton,
+                        content = colors.ink,
+                        modifier = Modifier.weight(1f),
+                        onClick = { deletingSession = null },
+                    )
+                    HomeDialogButton(
+                        label = stringResource(R.string.home_delete),
+                        background = Color(0xFFDC2626),
+                        content = Color.White,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            val s = session
+                            deletingSession = null
+                            scope.launch {
+                                onDeleteSession(s.id)
+                                    .onSuccess {
+                                        onRefresh()
+                                        showToast(context.getString(R.string.home_session_deleted))
+                                    }
+                                    .onFailure { showToast(it.message ?: context.getString(R.string.home_delete_failed), isError = true) }
+                            }
+                        },
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -277,13 +390,16 @@ private fun HomeSessionActionOverlay(
     onRename: () -> Unit,
     onTogglePinned: () -> Unit,
     onToggleArchived: () -> Unit,
+    onFork: () -> Unit,
+    onSetTag: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val colors = LocalAAColors.current
     val darkMode = colors.canvas == Color(0xFF09090B)
     val density = LocalDensity.current
     val row = menu.rowBounds
     val menuWidth = 252.dp
-    val menuHeight = 168.dp
+    val menuHeight = 290.dp
     val gap = 10.dp
     val margin = 18.dp
     val menuWidthPx = with(density) { menuWidth.toPx() }
@@ -327,6 +443,9 @@ private fun HomeSessionActionOverlay(
             onRename = onRename,
             onTogglePinned = onTogglePinned,
             onToggleArchived = onToggleArchived,
+            onFork = onFork,
+            onSetTag = onSetTag,
+            onDelete = onDelete,
         )
     }
 }
@@ -400,6 +519,9 @@ private fun HomeSessionActionMenuCard(
     onRename: () -> Unit,
     onTogglePinned: () -> Unit,
     onToggleArchived: () -> Unit,
+    onFork: () -> Unit,
+    onSetTag: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val colors = LocalAAColors.current
     val darkMode = colors.canvas == Color(0xFF09090B)
@@ -411,7 +533,7 @@ private fun HomeSessionActionMenuCard(
     Column(
         modifier = modifier
             .width(252.dp)
-            .height(168.dp)
+            .wrapContentHeight()
             .shadow(34.dp, RoundedCornerShape(22.dp), ambientColor = shadow, spotColor = shadow)
             .clip(RoundedCornerShape(22.dp))
             .background(surface)
@@ -435,6 +557,24 @@ private fun HomeSessionActionMenuCard(
             iconRes = if (darkMode) R.drawable.ic_session_action_unpin_white else R.drawable.ic_session_action_unpin_black,
             textColor = text,
             onClick = onTogglePinned,
+        )
+        HomeSessionActionMenuRow(
+            label = stringResource(R.string.home_fork),
+            iconRes = if (darkMode) R.drawable.ic_session_action_rename_white else R.drawable.ic_session_action_rename_black,
+            textColor = text,
+            onClick = onFork,
+        )
+        HomeSessionActionMenuRow(
+            label = stringResource(R.string.home_set_tag),
+            iconRes = if (darkMode) R.drawable.ic_session_action_unpin_white else R.drawable.ic_session_action_unpin_black,
+            textColor = text,
+            onClick = onSetTag,
+        )
+        HomeSessionActionMenuRow(
+            label = stringResource(R.string.home_delete),
+            iconRes = if (darkMode) R.drawable.ic_session_action_archive_white else R.drawable.ic_session_action_archive_black,
+            textColor = Color(0xFFDC2626),
+            onClick = onDelete,
         )
     }
 }
@@ -630,6 +770,110 @@ private fun EditText.focusAtTextEnd(
             this,
             if (forceKeyboard) InputMethodManager.SHOW_FORCED else InputMethodManager.SHOW_IMPLICIT,
         )
+    }
+}
+
+@Composable
+private fun HomeTagSessionDialog(
+    session: AgentSession,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    val colors = LocalAAColors.current
+    val darkMode = colors.canvas == Color(0xFF09090B)
+    val shape = RoundedCornerShape(26.dp)
+    val surface = if (darkMode) Color(0xFF18181B) else Color.White
+    val fieldColor = if (darkMode) Color(0xFF09090B) else Color(0xFFF7F7F7)
+    val secondaryButton = if (darkMode) Color(0xFF27272A) else Color(0xFFF3F3F3)
+    var tag by remember(session.id) { mutableStateOf(session.tag.orEmpty()) }
+
+    fun submit() { onSave(tag) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 22.dp)
+                .widthIn(max = 380.dp)
+                .shadow(34.dp, shape, ambientColor = Color(0x33000000), spotColor = Color(0x33000000))
+                .clip(shape)
+                .background(surface)
+                .border(1.dp, colors.border, shape)
+                .padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.home_set_tag_session),
+                color = colors.ink,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.ExtraBold,
+                lineHeight = 29.sp,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(fieldColor)
+                    .border(1.dp, colors.border, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AndroidView(
+                    factory = { viewContext ->
+                        EditText(viewContext).apply {
+                            configureRenameInput(colors.ink, onDone = { submit() })
+                            setText(tag)
+                            setSelection(text.length)
+                            hint = viewContext.getString(R.string.home_tag_placeholder)
+                            addTextChangedListener(
+                                object : TextWatcher {
+                                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+                                    override fun afterTextChanged(s: Editable?) {
+                                        val next = s?.toString().orEmpty()
+                                        if (next != tag) tag = next
+                                    }
+                                },
+                            )
+                            post { focusAtTextEnd(viewContext) }
+                            postDelayed({ focusAtTextEnd(viewContext, forceKeyboard = true) }, 180L)
+                        }
+                    },
+                    update = { input ->
+                        input.configureRenameInput(colors.ink, onDone = { submit() })
+                        if (input.text.toString() != tag) {
+                            input.setText(tag)
+                            input.setSelection(input.text.length)
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                HomeDialogButton(
+                    label = stringResource(R.string.common_cancel),
+                    background = secondaryButton,
+                    content = colors.ink,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss,
+                )
+                HomeDialogButton(
+                    label = stringResource(R.string.common_save),
+                    background = colors.primaryAction,
+                    content = colors.onPrimaryAction,
+                    modifier = Modifier.weight(1f),
+                    onClick = { submit() },
+                )
+            }
+        }
     }
 }
 

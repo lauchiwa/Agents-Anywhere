@@ -459,6 +459,39 @@ fun AgentsAnywhereApp(
                     }
             }
         },
+        onForkSession = { sessionId ->
+            if (!hasAuthSession) {
+                Result.failure(IllegalStateException("Sign in again to fork this session."))
+            } else {
+                sessionsController.forkSession(sessionId)
+            }
+        },
+        onDeleteSession = { sessionId ->
+            if (!hasAuthSession) {
+                Result.failure(IllegalStateException("Sign in again to delete this session."))
+            } else {
+                sessionsController.deleteSession(sessionId)
+                    .onSuccess {
+                        sessionsState = sessionsState.copy(
+                            sessions = sessionsState.sessions.filter { it.id != sessionId },
+                        )
+                    }
+            }
+        },
+        onTagSession = { sessionId, tag ->
+            if (!hasAuthSession) {
+                Result.failure(IllegalStateException("Sign in again to tag this session."))
+            } else {
+                sessionsController.tagSession(sessionId, tag)
+                    .onSuccess {
+                        sessionsState = sessionsState.copy(
+                            sessions = sessionsState.sessions.map {
+                                if (it.id == sessionId) it.copy(tag = tag) else it
+                            },
+                        )
+                    }
+            }
+        },
         onCreateSession = { title, connectorId, runtime, cwd ->
             if (!hasAuthSession) {
                 Result.failure(IllegalStateException("Sign in again to create a session."))
@@ -547,6 +580,9 @@ private fun AgentsAnywhereNavHost(
     onRenameSession: suspend (String, String) -> Result<com.agentsanywhere.app.model.AgentSession>,
     onSetSessionPinned: suspend (String, Boolean) -> Result<com.agentsanywhere.app.model.AgentSession>,
     onSetSessionArchived: suspend (String, Boolean) -> Result<com.agentsanywhere.app.model.AgentSession>,
+    onForkSession: suspend (String) -> Result<Unit>,
+    onDeleteSession: suspend (String) -> Result<Unit>,
+    onTagSession: suspend (String, String?) -> Result<Unit>,
     onCreateSession: suspend (String, String, String, String) -> Result<com.agentsanywhere.app.model.AgentSession>,
     onListDirectory: suspend (String, String, String) -> Result<NewSessionDirectory>,
     onSessionChanged: (AgentSession) -> Unit,
@@ -637,6 +673,9 @@ private fun AgentsAnywhereNavHost(
                     onRenameSession = onRenameSession,
                     onSetSessionPinned = onSetSessionPinned,
                     onSetSessionArchived = onSetSessionArchived,
+                    onForkSession = onForkSession,
+                    onDeleteSession = onDeleteSession,
+                    onTagSession = onTagSession,
                     onOpenSession = onOpenSession,
                     onOpenDevice = onOpenDevice,
                     onPairDevice = { pairDeviceSheetOpen = true },

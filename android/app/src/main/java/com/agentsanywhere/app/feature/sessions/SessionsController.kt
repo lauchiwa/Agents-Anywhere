@@ -64,6 +64,77 @@ class SessionsController(
         )
     }
 
+    suspend fun forkSession(
+        sessionId: String,
+    ): Result<Unit> {
+        val serverUrl = sessionStore.readServerUrl()
+        val accessToken = sessionStore.readAccessToken()
+        if (serverUrl.isBlank() || accessToken.isBlank()) {
+            return Result.failure(IllegalStateException("Sign in again to fork this session."))
+        }
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                sessionsApi.forkSession(
+                    serverUrl = serverUrl,
+                    authorizationToken = accessToken,
+                    sessionId = sessionId,
+                )
+                Unit
+            }.recoverCatching { error ->
+                if (error is ApiException) throw error
+                throw IllegalStateException(error.message ?: "Could not fork this session.", error)
+            }
+        }
+    }
+
+    suspend fun deleteSession(
+        sessionId: String,
+    ): Result<Unit> {
+        val serverUrl = sessionStore.readServerUrl()
+        val accessToken = sessionStore.readAccessToken()
+        if (serverUrl.isBlank() || accessToken.isBlank()) {
+            return Result.failure(IllegalStateException("Sign in again to delete this session."))
+        }
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                sessionsApi.deleteSession(
+                    serverUrl = serverUrl,
+                    authorizationToken = accessToken,
+                    sessionId = sessionId,
+                )
+                Unit
+            }.recoverCatching { error ->
+                if (error is ApiException) throw error
+                throw IllegalStateException(error.message ?: "Could not delete this session.", error)
+            }
+        }
+    }
+
+    suspend fun tagSession(
+        sessionId: String,
+        tag: String?,
+    ): Result<Unit> {
+        val serverUrl = sessionStore.readServerUrl()
+        val accessToken = sessionStore.readAccessToken()
+        if (serverUrl.isBlank() || accessToken.isBlank()) {
+            return Result.failure(IllegalStateException("Sign in again to tag this session."))
+        }
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                sessionsApi.tagSession(
+                    serverUrl = serverUrl,
+                    authorizationToken = accessToken,
+                    sessionId = sessionId,
+                    tag = tag,
+                )
+                Unit
+            }.recoverCatching { error ->
+                if (error is ApiException) throw error
+                throw IllegalStateException(error.message ?: "Could not tag this session.", error)
+            }
+        }
+    }
+
     suspend fun createSession(
         title: String,
         connectorId: String,
@@ -314,6 +385,8 @@ class SessionsController(
             sortKey = sortAt ?: lastActivityAt ?: lastItemAt ?: "",
             contextUsage = contextUsage?.toContextUsage(),
             rateLimit = rateLimit?.toRateLimit(),
+            externalSessionId = externalSessionId,
+            tag = tag,
         )
     }
 

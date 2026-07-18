@@ -28,6 +28,7 @@ data class RemoteSession(
     val runtimeSettingsOverride: Map<String, Any?>,
     val contextUsage: RemoteContextUsage? = null,
     val rateLimit: RemoteRateLimit? = null,
+    val tag: String? = null,
 )
 
 data class RemoteContextUsage(

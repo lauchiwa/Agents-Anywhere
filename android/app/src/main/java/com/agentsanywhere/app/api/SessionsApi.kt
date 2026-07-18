@@ -226,6 +226,48 @@ class SessionsApi(
         return "${serverUrl.trimEnd('/')}/sessions/${sessionId.urlEncode()}/attachments/${fileId.urlEncode()}/open"
     }
 
+    fun forkSession(
+        serverUrl: String,
+        authorizationToken: String,
+        sessionId: String,
+    ): RemoteRpcResponse {
+        return client.postJson(
+            serverUrl = serverUrl,
+            path = "/sessions/${sessionId.urlEncode()}/fork",
+            body = JSONObject(),
+            authorizationToken = authorizationToken,
+        ).toRemoteRpcResponse()
+    }
+
+    fun deleteSession(
+        serverUrl: String,
+        authorizationToken: String,
+        sessionId: String,
+    ): RemoteRpcResponse {
+        return client.postJson(
+            serverUrl = serverUrl,
+            path = "/sessions/${sessionId.urlEncode()}/delete",
+            body = JSONObject(),
+            authorizationToken = authorizationToken,
+        ).toRemoteRpcResponse()
+    }
+
+    fun tagSession(
+        serverUrl: String,
+        authorizationToken: String,
+        sessionId: String,
+        tag: String?,
+    ): RemoteRpcResponse {
+        val body = JSONObject()
+        if (tag != null) body.put("tag", tag) else body.put("tag", JSONObject.NULL)
+        return client.postJson(
+            serverUrl = serverUrl,
+            path = "/sessions/${sessionId.urlEncode()}/tag",
+            body = body,
+            authorizationToken = authorizationToken,
+        ).toRemoteRpcResponse()
+    }
+
     fun interruptSession(
         serverUrl: String,
         authorizationToken: String,
@@ -318,6 +360,7 @@ class SessionsApi(
             runtimeSettings = optJSONObject("runtimeSettings").toMap(),
             runtimeSettingsOverride = optJSONObject("runtimeSettingsOverride").toMap(),
             contextUsage = optJSONObject("contextUsage")?.toRemoteContextUsage(),
+            tag = optNullableString("tag"),
         )
     }
 

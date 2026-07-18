@@ -30,6 +30,8 @@ data class AgentSession(
     // first event; status "allowed" means no warning, "allowed_warning"/
     // "rejected" surface a quota banner with the reset time.
     val rateLimit: RateLimit? = null,
+    val externalSessionId: String? = null,
+    val tag: String? = null,
 )
 
 // Compact context-window gauge shown in the session header: how full the
