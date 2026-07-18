@@ -732,3 +732,37 @@ Added SessionTagChip composable to HomeScreen.kt; rendered in both HomePinnedSes
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: Android+Web MCP Server Editor
+
+**Date**: 2026-07-18
+**Task**: Android+Web MCP Server Editor
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+Implemented full MCP server config editor for Android and Web. Android: McpServersDtos, DevicesApi/SessionsApi endpoints, DevicesController/SessionsController wrappers, ConnectorMcpServersSheet (full editor with stdio/http/sse type switching, KV env/headers, validation), SessionMcpServersSheet, wired into DeviceDetailScreen (MCP button in agents header) and SessionRuntimeSettingsSheet (tappable row). Web: McpServerConfig types, DashboardApi methods, reusable McpServersEditor component, wired into device-page and session-view-header. Full EN+zh-rCN i18n. Build passes compileDebugKotlin.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dbdf1d2` | (see git log) |
+| `0e4b2e4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
