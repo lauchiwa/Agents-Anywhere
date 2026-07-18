@@ -152,6 +152,8 @@ function mapSession(session: RealSessionView): SessionView {
     updatedSeq: session.updatedSeq,
     effectiveRunMode: session.effectiveRunMode,
     runtimeSettings: session.runtimeSettings ?? null,
+    contextUsage: session.contextUsage ?? null,
+    rateLimit: session.rateLimit ?? null,
     updatedAt: relativeSessionTime(session),
   }
 }
