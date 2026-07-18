@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { Bell, ChevronDown, CircleAlert, Clock, Copy, FilePenLine, Sparkles } from "lucide-react"
+import { Bell, BookOpen, ChevronDown, CircleAlert, Clock, Copy, FilePenLine, Sparkles, Wrench, Zap } from "lucide-react"
 import dynamic from "next/dynamic"
 import { useTranslations } from "next-intl"
 
@@ -130,6 +130,9 @@ function SystemCard({ item }: { item: TimelineItem }) {
   if (kind === "reasoning") return <ReasoningEntry item={item} />
   if (kind === "compact") return <CompactEntry item={item} />
   if (kind === "notification") return <NotificationEntry item={item} />
+  if (kind === "skill_listing") return <SkillListingEntry item={item} />
+  if (kind === "deferred_tools_delta") return <DeferredToolsDeltaEntry item={item} />
+  if (kind === "invoked_skills") return <InvokedSkillsEntry item={item} />
   const text = textOf(item.content.text) || textOf(item.content.message) || textOf(item.content.rawText)
   const failed = item.status === "failed" || kind === "error"
   return (
@@ -302,5 +305,62 @@ function ArtifactCard({ token, session, item }: { token: string; session: Sessio
         </CollapsibleContent>
       </div>
     </Collapsible>
+  )
+}
+
+type SkillEntry = { name?: unknown; description?: unknown }
+
+function SkillListingEntry({ item }: { item: TimelineItem }) {
+  const skills = recordsOf(item.content.skills) as SkillEntry[]
+  if (skills.length === 0) return null
+  return (
+    <Collapsible className="min-w-0 max-w-full overflow-hidden">
+      <div className="min-w-0 max-w-full space-y-1 overflow-hidden">
+        <CollapsibleTrigger asChild>
+          <button className="group inline-flex h-7 max-w-full items-center gap-1.5 rounded-full bg-secondary px-2.5 text-left text-xs font-medium text-secondary-foreground transition-colors hover:bg-secondary/80">
+            <ChevronDown className="size-3.5 shrink-0 -rotate-90 transition-transform group-data-[state=open]:rotate-0" />
+            <BookOpen className="size-3.5 shrink-0 opacity-70" />
+            <span className="truncate">{skills.length} skills available</span>
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="min-w-0 max-w-full overflow-hidden">
+          <div className="space-y-0.5 pl-1 text-xs text-muted-foreground">
+            {skills.map((skill, i) => (
+              <div key={textOf(skill.name) ?? i} className="grid grid-cols-[120px_minmax(0,1fr)] gap-x-3">
+                <span className="code-mono truncate font-medium text-foreground">{textOf(skill.name)}</span>
+                <span className="truncate">{textOf(skill.description)}</span>
+              </div>
+            ))}
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
+  )
+}
+
+function DeferredToolsDeltaEntry({ item }: { item: TimelineItem }) {
+  const added = Array.isArray(item.content.addedNames) ? (item.content.addedNames as unknown[]).filter(Boolean) : []
+  const removed = Array.isArray(item.content.removedNames) ? (item.content.removedNames as unknown[]).filter(Boolean) : []
+  if (added.length === 0 && removed.length === 0) return null
+  const parts: string[] = []
+  if (added.length > 0) parts.push(`+${added.length} deferred tools`)
+  if (removed.length > 0) parts.push(`-${removed.length} tools`)
+  return (
+    <div className="inline-flex h-6 items-center gap-1.5 rounded-full bg-secondary px-2.5 text-xs font-medium text-secondary-foreground">
+      <Wrench className="size-3 shrink-0 opacity-70" />
+      <span>{parts.join(", ")}</span>
+    </div>
+  )
+}
+
+function InvokedSkillsEntry({ item }: { item: TimelineItem }) {
+  const skills = recordsOf(item.content.skills) as SkillEntry[]
+  if (skills.length === 0) return null
+  const names = skills.map((s) => textOf(s.name)).filter(Boolean).join(", ")
+  return (
+    <div className="inline-flex h-6 items-center gap-1.5 rounded-full bg-secondary px-2.5 text-xs font-medium text-secondary-foreground">
+      <Zap className="size-3 shrink-0 opacity-70" />
+      <span className="truncate">Skills: {names}</span>
+    </div>
   )
 }

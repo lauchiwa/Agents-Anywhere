@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -263,6 +265,143 @@ def _backend_notifications_from_sdk_history(
     return notifications
 
 
+# ---------------------------------------------------------------------------
+# Attachment entry processing (JSONL-only: SDK filters attachment entries out
+# of get_session_messages(), so we read the raw file directly).
+# ---------------------------------------------------------------------------
+
+_SUPPORTED_ATTACHMENT_TYPES = frozenset({"skill_listing", "deferred_tools_delta", "invoked_skills"})
+
+
+def _session_jsonl_path(session_info: Any) -> str | None:
+    """Return the JSONL transcript path from session_info, or None if unknown."""
+    for attr in ("path", "file_path", "transcript_path"):
+        val = getattr(session_info, attr, None)
+        if isinstance(val, str) and val.endswith(".jsonl") and os.path.exists(val):
+            return val
+    return None
+
+
+def _parse_skill_listing(text: str) -> list[dict[str, str]]:
+    """Parse '- name: description\n...' skill listing text into a list of dicts."""
+    result = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("- "):
+            continue
+        line = line[2:]
+        if ": " in line:
+            name, _, desc = line.partition(": ")
+        else:
+            name, desc = line, ""
+        if name.strip():
+            result.append({"name": name.strip(), "description": desc.strip()})
+    return result
+
+
+def _normalize_attachment_content(att_type: str, att: dict[str, Any]) -> dict[str, Any] | None:
+    """Convert a raw attachment dict into a timeline item content dict, or None to skip."""
+    if att_type == "skill_listing":
+        content_text = att.get("content", "")
+        if not isinstance(content_text, str):
+            return None
+        skills = _parse_skill_listing(content_text)
+        if not skills:
+            return None
+        return {"kind": "skill_listing", "skills": skills}
+    if att_type == "deferred_tools_delta":
+        added = att.get("addedNames") or []
+        removed = att.get("removedNames") or []
+        if not isinstance(added, list):
+            added = []
+        if not isinstance(removed, list):
+            removed = []
+        if not added and not removed:
+            return None
+        return {"kind": "deferred_tools_delta", "addedNames": added, "removedNames": removed}
+    if att_type == "invoked_skills":
+        skills_raw = att.get("skills") or []
+        if not isinstance(skills_raw, list):
+            return None
+        skills = [
+            {"name": s.get("name", ""), "path": s.get("path", "")}
+            for s in skills_raw
+            if isinstance(s, dict) and s.get("name")
+        ]
+        if not skills:
+            return None
+        return {"kind": "invoked_skills", "skills": skills}
+    return None
+
+
+def _read_attachment_entries(session_info: Any) -> list[dict[str, Any]]:
+    """Read supported attachment entries directly from the JSONL transcript file."""
+    path = _session_jsonl_path(session_info)
+    if not path:
+        return []
+    result = []
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                att = entry.get("attachment")
+                if not isinstance(att, dict):
+                    continue
+                att_type = att.get("type", "")
+                if att_type not in _SUPPORTED_ATTACHMENT_TYPES:
+                    continue
+                result.append({
+                    "uuid": entry.get("uuid") or f"{att_type}_unknown",
+                    "parentUuid": entry.get("parentUuid"),
+                    "session_id": entry.get("session_id") or entry.get("sessionId", ""),
+                    "timestamp": entry.get("timestamp", ""),
+                    "attachment": att,
+                })
+    except OSError:
+        pass
+    return result
+
+
+def _attachment_to_timeline_item(
+    entry: dict[str, Any],
+    *,
+    session_id: str,
+    external_session_id: str,
+    turn_id: str,
+    order_seq: int,
+) -> dict[str, Any] | None:
+    att = entry["attachment"]
+    att_type = att.get("type", "")
+    content = _normalize_attachment_content(att_type, att)
+    if content is None:
+        return None
+    item_id = f"claude_attachment_{entry['uuid']}"
+    ts = entry.get("timestamp") or utc_now()
+    return {
+        "id": item_id,
+        "sessionId": session_id,
+        "turnId": turn_id,
+        "type": "system",
+        "status": "done",
+        "role": None,
+        "parentItemId": None,
+        "content": content,
+        "source": {"kind": "attachment", "sessionId": external_session_id},
+        "orderSeq": order_seq,
+        "revision": 1,
+        "createdAt": ts,
+        "updatedAt": ts,
+    }
+
+
 def _timeline_items_from_messages(
     *,
     session_id: str,
@@ -272,6 +411,14 @@ def _timeline_items_from_messages(
     pending_client_messages: list[PendingClientMessage] | None = None,
 ) -> list[dict[str, Any]]:
     turns = _partition_history_turns(messages, session_info=session_info)
+    # Read attachment entries from the raw JSONL (SDK filters them out).
+    # Build a map from parentUuid → list of attachment entries for O(1) lookup.
+    raw_attachments = _read_attachment_entries(session_info)
+    att_by_parent: dict[str | None, list[dict[str, Any]]] = {}
+    for ae in raw_attachments:
+        parent = ae.get("parentUuid")
+        att_by_parent.setdefault(parent, []).append(ae)
+
     out: list[dict[str, Any]] = []
     next_order = 1
     matcher = _PendingClientMessageMatcher(pending_client_messages or [])
@@ -292,6 +439,9 @@ def _timeline_items_from_messages(
         next_order += 1
         out.append(turn_start)
 
+        # Collect the set of uuids in this turn to match attachments by parentUuid.
+        turn_uuids = {_raw_uuid(raw) for raw in turn.raw_messages if _raw_uuid(raw)}
+
         events = ClaudeTranscriptNormalizer().normalize(turn.raw_messages)
         _attach_pending_client_messages(events, matcher)
         reduced = ClaudeTimelineReducer().reduce(
@@ -304,6 +454,22 @@ def _timeline_items_from_messages(
             adjusted["orderSeq"] = next_order
             next_order += 1
             out.append(adjusted)
+
+        # Append attachment items whose parentUuid belongs to this turn.
+        for parent_uuid in list(att_by_parent.keys()):
+            if parent_uuid not in turn_uuids:
+                continue
+            for ae in att_by_parent.pop(parent_uuid):
+                att_item = _attachment_to_timeline_item(
+                    ae,
+                    session_id=session_id,
+                    external_session_id=external_session_id,
+                    turn_id=turn.turn_id,
+                    order_seq=next_order,
+                )
+                if att_item is not None:
+                    next_order += 1
+                    out.append(att_item)
 
         turn_end = _turn_boundary_item(
             session_id=session_id,
