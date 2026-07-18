@@ -868,3 +868,36 @@ Implemented full MCP server config editor for Android and Web. Android: McpServe
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: Android maxBudgetUsd 预算 chip
+
+**Date**: 2026-07-18
+**Task**: Android maxBudgetUsd 预算 chip
+**Branch**: `fix/android-sse-hang`
+
+### Summary
+
+在 Android 会话发送框添加预算 chip（美元上限），对称补齐 Web 已有的 per-turn maxBudgetUsd 能力。BudgetChip 组件嵌入 ComposerActions 工具栏，支持内联编辑和清除；数值通过 sendText → SessionDetailController → SessionsApi.sendSessionMessage 全链路透传给服务器。编译通过，推送至 fix/android-sse-hang。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `47d0b50` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
