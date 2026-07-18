@@ -84,6 +84,11 @@ data class TimelineMessage(
     // Sub-agent (Agent tool) progress folded onto the parent tool card as
     // content.subagent. Real-time-only; null for ordinary tool cards.
     val subagent: SubagentProgress? = null,
+    // Attachment-derived fields for SkillListing / InvokedSkills items.
+    val skills: List<SkillItem> = emptyList(),
+    // Attachment-derived fields for DeferredToolsDelta items.
+    val addedToolNames: List<String> = emptyList(),
+    val removedToolNames: List<String> = emptyList(),
 )
 
 // Live progress of a spawned sub-agent, surfaced on its parent Agent tool card.
@@ -172,4 +177,10 @@ enum class TimelineMessageKind {
     // CLI-initiated Notification hook: a message asking for the user's
     // attention (e.g. a permission prompt) surfaced as its own card.
     Notification,
+    // Attachment subtypes from JSONL transcript, surfaced as system items.
+    SkillListing,
+    DeferredToolsDelta,
+    InvokedSkills,
 }
+
+data class SkillItem(val name: String, val description: String = "", val path: String = "")

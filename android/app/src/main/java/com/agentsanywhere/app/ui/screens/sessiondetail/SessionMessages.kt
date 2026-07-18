@@ -75,6 +75,7 @@ import com.agentsanywhere.app.feature.sessiondetail.SubagentProgress
 import com.agentsanywhere.app.feature.sessiondetail.TimelineAttachment
 import com.agentsanywhere.app.feature.sessiondetail.TimelineMessage
 import com.agentsanywhere.app.feature.sessiondetail.TimelineMessageKind
+import com.agentsanywhere.app.feature.sessiondetail.SkillItem
 import com.agentsanywhere.app.ui.designsystem.LocalAAColors
 import com.agentsanywhere.app.ui.designsystem.noRippleClickable
 import com.valentinilk.shimmer.shimmer
@@ -850,6 +851,9 @@ private fun TimelineMessageRow(
         TimelineMessageKind.Notification -> NotificationCard(message, darkMode, onCopyMessage)
         TimelineMessageKind.System -> ToolPlaceholder(message, darkMode)
         TimelineMessageKind.Compact -> CompactSeparator(message, darkMode)
+        TimelineMessageKind.SkillListing -> SkillListingCard(message, darkMode)
+        TimelineMessageKind.DeferredToolsDelta -> DeferredToolsDeltaPill(message, darkMode)
+        TimelineMessageKind.InvokedSkills -> InvokedSkillsPill(message, darkMode)
         TimelineMessageKind.Text -> when (message.author) {
             MessageAuthor.User -> UserBubble(message, darkMode, sessionId, controller, onPreviewAttachment, onCopyMessage)
             MessageAuthor.Agent -> AgentMarkdownText(message.text, darkMode, onOpenFile = onOpenFile)
@@ -1399,6 +1403,9 @@ private fun SubagentChildren(
                     TimelineMessageKind.Notification -> NotificationCard(child, darkMode)
                     TimelineMessageKind.System -> ToolPlaceholder(child, darkMode)
                     TimelineMessageKind.Compact -> CompactSeparator(child, darkMode)
+                    TimelineMessageKind.SkillListing -> SkillListingCard(child, darkMode)
+                    TimelineMessageKind.DeferredToolsDelta -> DeferredToolsDeltaPill(child, darkMode)
+                    TimelineMessageKind.InvokedSkills -> InvokedSkillsPill(child, darkMode)
                     TimelineMessageKind.Text -> when (child.author) {
                         MessageAuthor.Agent -> AgentMarkdownText(child.text, darkMode, onOpenFile = onOpenFile)
                         else -> AgentMarkdownText(child.text, darkMode, onOpenFile = onOpenFile)
@@ -1729,6 +1736,115 @@ private fun ToolPlaceholder(message: TimelineMessage, darkMode: Boolean) {
             color = if (darkMode) Color(0xFFA1A1AA) else Color(0xFF7C7B76),
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun SkillListingCard(message: TimelineMessage, darkMode: Boolean) {
+    if (message.skills.isEmpty()) return
+    var expanded by remember { mutableStateOf(false) }
+    val pillColor = if (darkMode) Color(0xFF3F3F46) else Color(0xFFE4E4E7)
+    val textColor = if (darkMode) Color(0xFFD4D4D8) else Color(0xFF52525B)
+    val mutedColor = if (darkMode) Color(0xFFA1A1AA) else Color(0xFF71717A)
+    Column {
+        Row(
+            modifier = Modifier
+                .noRippleClickable { expanded = !expanded }
+                .background(color = pillColor, shape = androidx.compose.foundation.shape.RoundedCornerShape(50))
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (expanded) "▾" else "▸",
+                color = textColor,
+                fontSize = 11.sp,
+            )
+            Text(
+                text = "${message.skills.size} skills available",
+                color = textColor,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+        if (expanded) {
+            Column(modifier = Modifier.padding(start = 4.dp, top = 4.dp)) {
+                message.skills.forEach { skill ->
+                    Row(
+                        modifier = Modifier.padding(vertical = 1.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            text = skill.name,
+                            color = if (darkMode) Color(0xFFD4D4D8) else Color(0xFF27272A),
+                            fontSize = 12.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.widthIn(max = 120.dp),
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        )
+                        if (skill.description.isNotBlank()) {
+                            Text(
+                                text = skill.description,
+                                color = mutedColor,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeferredToolsDeltaPill(message: TimelineMessage, darkMode: Boolean) {
+    val parts = buildList {
+        if (message.addedToolNames.isNotEmpty()) add("+${message.addedToolNames.size} deferred tools")
+        if (message.removedToolNames.isNotEmpty()) add("-${message.removedToolNames.size} tools")
+    }
+    if (parts.isEmpty()) return
+    val pillColor = if (darkMode) Color(0xFF3F3F46) else Color(0xFFE4E4E7)
+    val textColor = if (darkMode) Color(0xFFD4D4D8) else Color(0xFF52525B)
+    Row(
+        modifier = Modifier
+            .background(color = pillColor, shape = androidx.compose.foundation.shape.RoundedCornerShape(50))
+            .padding(horizontal = 10.dp, vertical = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = parts.joinToString(", "),
+            color = textColor,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
+private fun InvokedSkillsPill(message: TimelineMessage, darkMode: Boolean) {
+    if (message.skills.isEmpty()) return
+    val names = message.skills.joinToString(", ") { it.name }
+    val pillColor = if (darkMode) Color(0xFF3F3F46) else Color(0xFFE4E4E7)
+    val textColor = if (darkMode) Color(0xFFD4D4D8) else Color(0xFF52525B)
+    Row(
+        modifier = Modifier
+            .background(color = pillColor, shape = androidx.compose.foundation.shape.RoundedCornerShape(50))
+            .padding(horizontal = 10.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Skills: $names",
+            color = textColor,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
     }
 }

@@ -10,6 +10,7 @@ import com.agentsanywhere.app.api.RemoteRuntimeSettings
 import com.agentsanywhere.app.api.RemoteSession
 import com.agentsanywhere.app.api.toContextUsage
 import com.agentsanywhere.app.api.toRateLimit
+import com.agentsanywhere.app.api.toStringList
 import com.agentsanywhere.app.api.RemoteSessionEvent
 import com.agentsanywhere.app.api.RemoteTimelineItem
 import com.agentsanywhere.app.api.RemoteUploadedAttachment
@@ -790,6 +791,60 @@ class SessionDetailController(
                 clientMessageId = source.text("clientMessageId"),
                 turnId = turnId,
                 parentItemId = parentItemId,
+            )
+        }
+        if (kind == "skill_listing") {
+            val skills = content.records("skills").map { s ->
+                SkillItem(
+                    name = s.text("name").orEmpty(),
+                    description = s.text("description").orEmpty(),
+                )
+            }.filter { it.name.isNotBlank() }
+            if (skills.isEmpty()) return null
+            return TimelineMessage(
+                id = id, sourceItemId = id,
+                author = MessageAuthor.Tool,
+                text = "",
+                status = status, type = type,
+                kind = TimelineMessageKind.SkillListing,
+                skills = skills,
+                orderSeq = orderSeq, updatedSeq = updatedSeq,
+                turnId = turnId, parentItemId = parentItemId,
+            )
+        }
+        if (kind == "deferred_tools_delta") {
+            val added = content.optJSONArray("addedNames").toStringList()
+            val removed = content.optJSONArray("removedNames").toStringList()
+            if (added.isEmpty() && removed.isEmpty()) return null
+            return TimelineMessage(
+                id = id, sourceItemId = id,
+                author = MessageAuthor.Tool,
+                text = "",
+                status = status, type = type,
+                kind = TimelineMessageKind.DeferredToolsDelta,
+                addedToolNames = added,
+                removedToolNames = removed,
+                orderSeq = orderSeq, updatedSeq = updatedSeq,
+                turnId = turnId, parentItemId = parentItemId,
+            )
+        }
+        if (kind == "invoked_skills") {
+            val skills = content.records("skills").map { s ->
+                SkillItem(
+                    name = s.text("name").orEmpty(),
+                    path = s.text("path").orEmpty(),
+                )
+            }.filter { it.name.isNotBlank() }
+            if (skills.isEmpty()) return null
+            return TimelineMessage(
+                id = id, sourceItemId = id,
+                author = MessageAuthor.Tool,
+                text = "",
+                status = status, type = type,
+                kind = TimelineMessageKind.InvokedSkills,
+                skills = skills,
+                orderSeq = orderSeq, updatedSeq = updatedSeq,
+                turnId = turnId, parentItemId = parentItemId,
             )
         }
         val message = content.text("message") ?: content.text("text") ?: kind
