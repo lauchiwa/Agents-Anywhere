@@ -22,3 +22,10 @@ data class TextFile(
     val truncated: Boolean,
     val binary: Boolean,
 )
+
+data class DownloadInfo(
+    val name: String,
+    val size: Long,
+    val mediaType: String,
+    val downloadUrl: String,
+)

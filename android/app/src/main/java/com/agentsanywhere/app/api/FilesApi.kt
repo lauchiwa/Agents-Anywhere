@@ -50,6 +50,55 @@ class FilesApi(
         ).toRemoteTextFile()
     }
 
+    // Step 1 of a binary download: ask the server to stage the file and hand
+    // back a tokenized transfer URL. Stream the actual bytes with
+    // ApiClient.downloadToStream(serverUrl, download.downloadUrl, token, sink).
+    fun prepareDownload(
+        serverUrl: String,
+        authorizationToken: String,
+        deviceId: String,
+        root: String,
+        path: String,
+    ): RemoteDownload {
+        val body = JSONObject().apply { put("path", path) }
+        val response = client.postJson(
+            serverUrl = serverUrl,
+            path = "/connectors/${deviceId.urlEncode()}/fs/read?root=${root.urlEncode()}",
+            body = body,
+            authorizationToken = authorizationToken,
+        )
+        val result = response.optJSONObject("result") ?: JSONObject()
+        val downloadUrl = result.optString("downloadUrl", "")
+        if (downloadUrl.isBlank()) {
+            throw ApiException("Server did not return a download URL.")
+        }
+        val fallbackName = path.trimEnd('/').substringAfterLast('/').ifBlank { "download" }
+        return RemoteDownload(
+            name = result.optString("name", fallbackName).ifBlank { fallbackName },
+            size = if (result.has("size") && !result.isNull("size")) result.optLong("size") else 0L,
+            mediaType = result.optString("mediaType", "application/octet-stream")
+                .ifBlank { "application/octet-stream" },
+            downloadUrl = downloadUrl,
+        )
+    }
+
+    // Step 2 of a binary download: stream the staged transfer bytes into sink.
+    fun downloadTransfer(
+        serverUrl: String,
+        authorizationToken: String,
+        downloadUrl: String,
+        sink: java.io.OutputStream,
+        onProgress: ((bytesRead: Long) -> Unit)? = null,
+    ): Long {
+        return client.downloadToStream(
+            serverUrl = serverUrl,
+            path = downloadUrl,
+            authorizationToken = authorizationToken,
+            sink = sink,
+            onProgress = onProgress,
+        )
+    }
+
     private fun JSONObject.toRemoteDirectoryEntry(): RemoteDirectoryEntry {
         return RemoteDirectoryEntry(
             name = optString("name", "Untitled").ifBlank { "Untitled" },

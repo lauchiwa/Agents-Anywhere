@@ -78,6 +78,59 @@ class FilesController(
         }
     }
 
+    // Step 1: stage the binary on the server and get a tokenized transfer URL.
+    suspend fun prepareDownload(
+        connectorId: String,
+        root: String,
+        path: String,
+    ): Result<DownloadInfo> {
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val auth = authSession()
+                val download = filesApi.prepareDownload(
+                    serverUrl = auth.serverUrl,
+                    authorizationToken = auth.accessToken,
+                    deviceId = connectorId,
+                    root = root,
+                    path = path,
+                )
+                DownloadInfo(
+                    name = download.name,
+                    size = download.size,
+                    mediaType = download.mediaType,
+                    downloadUrl = download.downloadUrl,
+                )
+            }.recoverCatching { error ->
+                if (error is ApiException) throw error
+                throw IllegalStateException(error.message ?: "Could not prepare the download.", error)
+            }
+        }
+    }
+
+    // Step 2: stream the staged bytes into the caller-provided sink (e.g. a
+    // MediaStore Downloads output stream). Returns the number of bytes written.
+    suspend fun streamDownload(
+        downloadUrl: String,
+        sink: java.io.OutputStream,
+        onProgress: ((bytesRead: Long) -> Unit)? = null,
+    ): Result<Long> {
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val auth = authSession()
+                filesApi.downloadTransfer(
+                    serverUrl = auth.serverUrl,
+                    authorizationToken = auth.accessToken,
+                    downloadUrl = downloadUrl,
+                    sink = sink,
+                    onProgress = onProgress,
+                )
+            }.recoverCatching { error ->
+                if (error is ApiException) throw error
+                throw IllegalStateException(error.message ?: "Could not download the file.", error)
+            }
+        }
+    }
+
     private fun authSession(): ApiAuth {
         val serverUrl = sessionStore.readServerUrl()
         val accessToken = sessionStore.readAccessToken()

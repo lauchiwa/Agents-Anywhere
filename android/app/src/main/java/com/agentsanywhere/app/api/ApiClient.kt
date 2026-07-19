@@ -232,6 +232,60 @@ class ApiClient {
         }
     }
 
+    fun downloadToStream(
+        serverUrl: String,
+        path: String,
+        authorizationToken: String?,
+        sink: java.io.OutputStream,
+        onProgress: ((bytesRead: Long) -> Unit)? = null,
+    ): Long {
+        return try {
+            val endpoint = URL("${serverUrl.trimEnd('/')}$path")
+            val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 15_000
+                // Large binaries (e.g. APKs) stream over a single connection;
+                // give each chunk read a generous window before timing out.
+                readTimeout = 120_000
+                setRequestProperty("Accept", "application/octet-stream")
+                setRequestProperty("ngrok-skip-browser-warning", "true")
+                if (!authorizationToken.isNullOrBlank()) {
+                    setRequestProperty("Authorization", "Bearer $authorizationToken")
+                }
+            }
+            try {
+                val responseCode = connection.responseCode
+                if (responseCode !in 200..299) {
+                    val errorText = connection.errorStream
+                        ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+                    throw ApiException(
+                        message = parseErrorMessage(errorText) ?: defaultErrorMessage(responseCode),
+                        statusCode = responseCode,
+                    )
+                }
+                var total = 0L
+                connection.inputStream.use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        sink.write(buffer, 0, read)
+                        total += read
+                        onProgress?.invoke(total)
+                    }
+                }
+                sink.flush()
+                total
+            } finally {
+                connection.disconnect()
+            }
+        } catch (exc: ApiException) {
+            throw exc
+        } catch (exc: IOException) {
+            throw ApiException("Could not reach the server. Check the URL and network.", cause = exc)
+        }
+    }
+
     private fun requestJson(
         serverUrl: String,
         path: String,

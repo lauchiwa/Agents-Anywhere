@@ -414,6 +414,10 @@
     <string name="files_search">Search</string>
     <string name="files_copied_path">Copied path</string>
     <string name="files_copy_path">Copy path</string>
+    <string name="files_download">Download file</string>
+    <string name="files_downloading">Downloading…</string>
+    <string name="files_download_saved">Saved to %1$s</string>
+    <string name="files_download_failed">Download failed</string>
 
     <string name="profile_settings">Settings</string>
     <string name="profile_account">Account</string>

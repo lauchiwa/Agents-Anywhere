@@ -414,6 +414,10 @@
     <string name="files_search">搜索</string>
     <string name="files_copied_path">已复制路径</string>
     <string name="files_copy_path">复制路径</string>
+    <string name="files_download">下载文件</string>
+    <string name="files_downloading">正在下载…</string>
+    <string name="files_download_saved">已保存到 %1$s</string>
+    <string name="files_download_failed">下载失败</string>
 
     <string name="profile_settings">设置</string>
     <string name="profile_account">账号</string>

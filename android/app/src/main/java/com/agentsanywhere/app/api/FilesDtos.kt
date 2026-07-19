@@ -24,3 +24,12 @@ data class RemoteTextFile(
     val binary: Boolean,
     val serverTime: String,
 )
+
+data class RemoteDownload(
+    val name: String,
+    val size: Long,
+    val mediaType: String,
+    // Server-relative URL of the streaming transfer, includes the transfer token
+    // as a query param. Combine with the server base URL to fetch the bytes.
+    val downloadUrl: String,
+)

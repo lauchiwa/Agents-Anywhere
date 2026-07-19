@@ -4,8 +4,15 @@ import android.graphics.Typeface
 import android.util.TypedValue
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.widget.Toast
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -77,6 +84,7 @@ import androidx.compose.ui.zIndex
 import com.agentsanywhere.app.R
 import com.agentsanywhere.app.feature.files.canonicalRemotePaths
 import com.agentsanywhere.app.feature.files.displayRemotePath
+import com.agentsanywhere.app.feature.files.FileDownloadSaver
 import com.agentsanywhere.app.feature.files.FileEntry
 import com.agentsanywhere.app.feature.files.fileNameFromRemotePath
 import com.agentsanywhere.app.feature.files.FilesController
@@ -105,6 +113,8 @@ import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.ChevronUp
 import com.composables.icons.lucide.Copy
+import com.composables.icons.lucide.Download
+import com.composables.icons.lucide.LoaderCircle
 import com.composables.icons.lucide.FileCode
 import com.composables.icons.lucide.FileText
 import com.composables.icons.lucide.Folder
@@ -146,11 +156,15 @@ internal fun SessionAgentFilesScreen(
     var searchQuery by remember(session?.id) { mutableStateOf("") }
     var searchResult by remember(session?.id) { mutableStateOf(SoraFileSearchResult()) }
     var pushView by remember(session?.id) { mutableStateOf(PushView.Files) }
+    var downloading by remember(session?.id) { mutableStateOf(false) }
     val searchController = remember(selectedFile?.path) { SoraFileSearchController() }
     val noWorkspaceMessage = stringResource(R.string.files_session_no_workspace)
     val loadFilesFailedMessage = stringResource(R.string.files_load_failed)
     val openFileFailedMessage = stringResource(R.string.files_open_failed)
+    val downloadFailedMessage = stringResource(R.string.files_download_failed)
     val deviceOs = device?.deviceOs ?: session?.cwd?.takeIf { windowsDriveRoot(it) != null }?.let { "windows" }
+    val context = LocalContext.current
+    val downloadSaver = remember(filesController) { FileDownloadSaver(context.applicationContext, filesController) }
 
     DisposableEffect(Unit) {
         onDispose { onTerminalVerticalDragChange(false) }
@@ -322,6 +336,42 @@ internal fun SessionAgentFilesScreen(
                     onToggleSearch = { searchOpen = !searchOpen },
                     onSearchQueryChange = { searchQuery = it },
                     onSearchResult = { searchResult = it },
+                    downloadEnabled = !file.isDirectory && session != null && !session.cwd.isNullOrBlank(),
+                    downloading = downloading,
+                    onDownload = {
+                        val current = session
+                        val root = current?.cwd?.takeIf { it.isNotBlank() }
+                        if (current == null || root == null || downloading) return@FilePreviewContent
+                        val filePath = normalizeRemotePath(file.path)
+                        downloading = true
+                        scope.launch {
+                            val result = downloadSaver.download(
+                                connectorId = current.connectorId,
+                                root = remoteRootForPath(
+                                    targetPath = filePath,
+                                    deviceOs = deviceOs,
+                                    fallbackRoot = root,
+                                ),
+                                path = filePath,
+                            )
+                            downloading = false
+                            result
+                                .onSuccess {
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.files_download_saved, it.location),
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
+                                .onFailure {
+                                    Toast.makeText(
+                                        context,
+                                        it.message ?: downloadFailedMessage,
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
+                        }
+                    },
                 )
             }
         }
@@ -348,13 +398,17 @@ internal fun DeviceFilesContent(
     var searchOpen by remember(device?.id) { mutableStateOf(false) }
     var searchQuery by remember(device?.id) { mutableStateOf("") }
     var searchResult by remember(device?.id) { mutableStateOf(SoraFileSearchResult()) }
+    var downloading by remember(device?.id) { mutableStateOf(false) }
     val searchController = remember(selectedFile?.path) { SoraFileSearchController() }
     val deviceOfflineMessage = stringResource(R.string.files_device_offline)
     val selectDeviceMessage = stringResource(R.string.files_select_device)
     val loadFilesFailedMessage = stringResource(R.string.files_load_failed)
     val openFileFailedMessage = stringResource(R.string.files_open_failed)
+    val downloadFailedMessage = stringResource(R.string.files_download_failed)
     val deviceOs = device?.deviceOs
     val isWindowsDevice = isWindowsDeviceOs(deviceOs)
+    val context = LocalContext.current
+    val downloadSaver = remember(controller) { FileDownloadSaver(context.applicationContext, controller) }
 
     fun load(path: String) {
         val current = device ?: return
@@ -483,6 +537,42 @@ internal fun DeviceFilesContent(
                 onToggleSearch = { searchOpen = !searchOpen },
                 onSearchQueryChange = { searchQuery = it },
                 onSearchResult = { searchResult = it },
+                downloadEnabled = !file.isDirectory && device?.online == true,
+                downloading = downloading,
+                onDownload = {
+                    val current = device
+                    if (current == null || !current.online || downloading) return@FilePreviewContent
+                    val filePath = normalizeRemotePath(file.path)
+                    val downloadRoot = remoteRootForPath(
+                        targetPath = filePath,
+                        deviceOs = deviceOs,
+                        fallbackRoot = resolvedRoot?.takeIf { it.isNotBlank() } ?: "~",
+                    )
+                    downloading = true
+                    scope.launch {
+                        val result = downloadSaver.download(
+                            connectorId = current.id,
+                            root = downloadRoot,
+                            path = filePath,
+                        )
+                        downloading = false
+                        result
+                            .onSuccess {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.files_download_saved, it.location),
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                            .onFailure {
+                                Toast.makeText(
+                                    context,
+                                    it.message ?: downloadFailedMessage,
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                    }
+                },
             )
         }
     }
@@ -995,6 +1085,9 @@ private fun FilePreviewContent(
     onToggleSearch: () -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onSearchResult: (SoraFileSearchResult) -> Unit,
+    downloadEnabled: Boolean = false,
+    downloading: Boolean = false,
+    onDownload: () -> Unit = {},
 ) {
     val windowsDriveOverviewLabel = stringResource(R.string.files_windows_drives)
     Column(
@@ -1026,6 +1119,9 @@ private fun FilePreviewContent(
             onToggleSearch = onToggleSearch,
             onSearchQueryChange = onSearchQueryChange,
             onSearchResult = onSearchResult,
+            downloadEnabled = downloadEnabled,
+            downloading = downloading,
+            onDownload = onDownload,
             modifier = Modifier.weight(1f),
         )
     }
@@ -1089,6 +1185,9 @@ private fun PreviewCard(
     onToggleSearch: () -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onSearchResult: (SoraFileSearchResult) -> Unit,
+    downloadEnabled: Boolean,
+    downloading: Boolean,
+    onDownload: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val clipboard = LocalClipboardManager.current
@@ -1120,6 +1219,9 @@ private fun PreviewCard(
                     }
                 }
             },
+            downloadEnabled = downloadEnabled,
+            downloading = downloading,
+            onDownload = onDownload,
         )
         if (searchOpen) {
             InlineFileSearchControls(
@@ -1165,6 +1267,9 @@ private fun PreviewCardHeader(
     copyEnabled: Boolean,
     onToggleSearch: () -> Unit,
     onCopy: () -> Unit,
+    downloadEnabled: Boolean = false,
+    downloading: Boolean = false,
+    onDownload: () -> Unit = {},
 ) {
     val background = if (darkMode) Color(0xFF18181B) else Color.White
     val text = if (darkMode) Color(0xFFFAFAFA) else Color(0xFF111111)
@@ -1196,6 +1301,20 @@ private fun PreviewCardHeader(
             enabled = true,
             contentDescription = stringResource(R.string.files_search_in_file),
             onClick = onToggleSearch,
+        )
+        PreviewIconButton(
+            icon = if (downloading) Lucide.LoaderCircle else Lucide.Download,
+            darkMode = darkMode,
+            background = buttonBackground,
+            border = buttonBorder,
+            enabled = downloadEnabled && !downloading,
+            contentDescription = if (downloading) {
+                stringResource(R.string.files_downloading)
+            } else {
+                stringResource(R.string.files_download)
+            },
+            onClick = onDownload,
+            spinning = downloading,
         )
         PreviewIconButton(
             icon = if (copied) Lucide.Check else Lucide.Copy,
@@ -1328,8 +1447,18 @@ private fun PreviewIconButton(
     enabled: Boolean,
     contentDescription: String,
     onClick: () -> Unit,
+    spinning: Boolean = false,
 ) {
     val content = if (darkMode) Color(0xFFE4E4E7) else Color(0xFF545550)
+    val rotation = if (spinning) {
+        val transition = rememberInfiniteTransition(label = "iconSpin")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(900), RepeatMode.Restart),
+            label = "iconSpinAngle",
+        ).value
+    } else 0f
     Box(
         modifier = Modifier
             .size(34.dp)
@@ -1339,7 +1468,14 @@ private fun PreviewIconButton(
             .then(if (enabled) Modifier.noRippleClickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = contentDescription, tint = content.copy(alpha = if (enabled) 1f else 0.38f), modifier = Modifier.size(16.dp))
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = content.copy(alpha = if (enabled) 1f else 0.38f),
+            modifier = Modifier
+                .size(16.dp)
+                .then(if (spinning) Modifier.graphicsLayer { rotationZ = rotation } else Modifier),
+        )
     }
 }
 
