@@ -970,8 +970,10 @@ fun SessionDetailScreen(
                 confirmButton = {
                     TextButton(onClick = {
                         showDeleteConfirm = false
-                        scope.launch { onDeleteSession?.invoke(session.id) }
-                        navigate(AppDestination.Sessions)
+                        scope.launch {
+                            onDeleteSession?.invoke(session.id)
+                            navigate(AppDestination.Sessions)
+                        }
                     }) { Text(stringResource(R.string.home_delete)) }
                 },
                 dismissButton = {
