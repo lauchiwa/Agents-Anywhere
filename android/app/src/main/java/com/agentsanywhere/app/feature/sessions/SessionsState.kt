@@ -12,6 +12,14 @@ data class SessionsState(
     val hasLoaded: Boolean = false,
 )
 
+// Look up a session by id across both active and archived lists. Session
+// operations (delete/fork/tag) need the session's externalSessionId and cwd,
+// which only live on the cached AgentSession, not on the bare id the UI holds.
+fun findSessionById(state: SessionsState, sessionId: String): AgentSession? {
+    return state.sessions.firstOrNull { it.id == sessionId }
+        ?: state.archivedSessions.firstOrNull { it.id == sessionId }
+}
+
 val SessionsState.pinnedSessions: List<AgentSession>
     get() = sessions.filter { it.pinned }
 

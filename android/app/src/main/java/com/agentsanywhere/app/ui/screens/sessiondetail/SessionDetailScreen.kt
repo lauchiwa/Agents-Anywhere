@@ -970,9 +970,11 @@ fun SessionDetailScreen(
                 confirmButton = {
                     TextButton(onClick = {
                         showDeleteConfirm = false
+                        val delete = onDeleteSession ?: return@TextButton
                         scope.launch {
-                            onDeleteSession?.invoke(session.id)
-                            navigate(AppDestination.Sessions)
+                            delete(session.id)
+                                .onSuccess { navigate(AppDestination.Sessions) }
+                                .onFailure { showError(it.message ?: "Could not delete this session.") }
                         }
                     }) { Text(stringResource(R.string.home_delete)) }
                 },

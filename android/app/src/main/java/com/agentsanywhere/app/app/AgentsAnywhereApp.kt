@@ -36,6 +36,7 @@ import com.agentsanywhere.app.feature.devices.DevicesController
 import com.agentsanywhere.app.feature.files.FilesController
 import com.agentsanywhere.app.feature.sessions.SessionsController
 import com.agentsanywhere.app.feature.sessions.SessionsState
+import com.agentsanywhere.app.feature.sessions.findSessionById
 import com.agentsanywhere.app.feature.sessions.NewSessionDirectory
 import com.agentsanywhere.app.feature.sessions.withDeletedDevice
 import com.agentsanywhere.app.feature.sessions.withDeletedDeviceAgent
@@ -463,17 +464,28 @@ fun AgentsAnywhereApp(
             if (!hasAuthSession) {
                 Result.failure(IllegalStateException("Sign in again to fork this session."))
             } else {
-                sessionsController.forkSession(sessionId)
+                val target = findSessionById(sessionsState, sessionId)
+                sessionsController.forkSession(
+                    sessionId = sessionId,
+                    externalSessionId = target?.externalSessionId,
+                    cwd = target?.cwd,
+                )
             }
         },
         onDeleteSession = { sessionId ->
             if (!hasAuthSession) {
                 Result.failure(IllegalStateException("Sign in again to delete this session."))
             } else {
-                sessionsController.deleteSession(sessionId)
+                val target = findSessionById(sessionsState, sessionId)
+                sessionsController.deleteSession(
+                    sessionId = sessionId,
+                    externalSessionId = target?.externalSessionId,
+                    cwd = target?.cwd,
+                )
                     .onSuccess {
                         sessionsState = sessionsState.copy(
                             sessions = sessionsState.sessions.filter { it.id != sessionId },
+                            archivedSessions = sessionsState.archivedSessions.filter { it.id != sessionId },
                         )
                     }
             }
@@ -482,7 +494,13 @@ fun AgentsAnywhereApp(
             if (!hasAuthSession) {
                 Result.failure(IllegalStateException("Sign in again to tag this session."))
             } else {
-                sessionsController.tagSession(sessionId, tag)
+                val target = findSessionById(sessionsState, sessionId)
+                sessionsController.tagSession(
+                    sessionId = sessionId,
+                    externalSessionId = target?.externalSessionId,
+                    tag = tag,
+                    cwd = target?.cwd,
+                )
                     .onSuccess {
                         sessionsState = sessionsState.copy(
                             sessions = sessionsState.sessions.map {

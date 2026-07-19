@@ -67,11 +67,16 @@ class SessionsController(
 
     suspend fun forkSession(
         sessionId: String,
+        externalSessionId: String?,
+        cwd: String?,
     ): Result<Unit> {
         val serverUrl = sessionStore.readServerUrl()
         val accessToken = sessionStore.readAccessToken()
         if (serverUrl.isBlank() || accessToken.isBlank()) {
             return Result.failure(IllegalStateException("Sign in again to fork this session."))
+        }
+        if (externalSessionId.isNullOrBlank()) {
+            return Result.failure(IllegalStateException("This session has not started yet, so it can't be forked."))
         }
         return withContext(Dispatchers.IO) {
             runCatching {
@@ -79,6 +84,8 @@ class SessionsController(
                     serverUrl = serverUrl,
                     authorizationToken = accessToken,
                     sessionId = sessionId,
+                    externalSessionId = externalSessionId,
+                    cwd = cwd,
                 )
                 Unit
             }.recoverCatching { error ->
@@ -90,11 +97,16 @@ class SessionsController(
 
     suspend fun deleteSession(
         sessionId: String,
+        externalSessionId: String?,
+        cwd: String?,
     ): Result<Unit> {
         val serverUrl = sessionStore.readServerUrl()
         val accessToken = sessionStore.readAccessToken()
         if (serverUrl.isBlank() || accessToken.isBlank()) {
             return Result.failure(IllegalStateException("Sign in again to delete this session."))
+        }
+        if (externalSessionId.isNullOrBlank()) {
+            return Result.failure(IllegalStateException("This session has not started yet, so it can't be deleted."))
         }
         return withContext(Dispatchers.IO) {
             runCatching {
@@ -102,6 +114,8 @@ class SessionsController(
                     serverUrl = serverUrl,
                     authorizationToken = accessToken,
                     sessionId = sessionId,
+                    externalSessionId = externalSessionId,
+                    cwd = cwd,
                 )
                 Unit
             }.recoverCatching { error ->
@@ -113,12 +127,17 @@ class SessionsController(
 
     suspend fun tagSession(
         sessionId: String,
+        externalSessionId: String?,
         tag: String?,
+        cwd: String?,
     ): Result<Unit> {
         val serverUrl = sessionStore.readServerUrl()
         val accessToken = sessionStore.readAccessToken()
         if (serverUrl.isBlank() || accessToken.isBlank()) {
             return Result.failure(IllegalStateException("Sign in again to tag this session."))
+        }
+        if (externalSessionId.isNullOrBlank()) {
+            return Result.failure(IllegalStateException("This session has not started yet, so it can't be tagged."))
         }
         return withContext(Dispatchers.IO) {
             runCatching {
@@ -126,7 +145,9 @@ class SessionsController(
                     serverUrl = serverUrl,
                     authorizationToken = accessToken,
                     sessionId = sessionId,
+                    externalSessionId = externalSessionId,
                     tag = tag,
+                    cwd = cwd,
                 )
                 Unit
             }.recoverCatching { error ->

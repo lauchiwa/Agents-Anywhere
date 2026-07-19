@@ -232,11 +232,17 @@ class SessionsApi(
         serverUrl: String,
         authorizationToken: String,
         sessionId: String,
+        externalSessionId: String,
+        cwd: String?,
     ): RemoteRpcResponse {
+        val body = JSONObject().apply {
+            put("externalSessionId", externalSessionId)
+            if (!cwd.isNullOrBlank()) put("cwd", cwd)
+        }
         return client.postJson(
             serverUrl = serverUrl,
             path = "/sessions/${sessionId.urlEncode()}/fork",
-            body = JSONObject(),
+            body = body,
             authorizationToken = authorizationToken,
         ).toRemoteRpcResponse()
     }
@@ -245,11 +251,17 @@ class SessionsApi(
         serverUrl: String,
         authorizationToken: String,
         sessionId: String,
+        externalSessionId: String,
+        cwd: String?,
     ): RemoteRpcResponse {
+        val body = JSONObject().apply {
+            put("externalSessionId", externalSessionId)
+            if (!cwd.isNullOrBlank()) put("cwd", cwd)
+        }
         return client.postJson(
             serverUrl = serverUrl,
             path = "/sessions/${sessionId.urlEncode()}/delete",
-            body = JSONObject(),
+            body = body,
             authorizationToken = authorizationToken,
         ).toRemoteRpcResponse()
     }
@@ -258,10 +270,15 @@ class SessionsApi(
         serverUrl: String,
         authorizationToken: String,
         sessionId: String,
+        externalSessionId: String,
         tag: String?,
+        cwd: String?,
     ): RemoteRpcResponse {
-        val body = JSONObject()
-        if (tag != null) body.put("tag", tag) else body.put("tag", JSONObject.NULL)
+        val body = JSONObject().apply {
+            put("externalSessionId", externalSessionId)
+            if (tag != null) put("tag", tag) else put("tag", JSONObject.NULL)
+            if (!cwd.isNullOrBlank()) put("cwd", cwd)
+        }
         return client.postJson(
             serverUrl = serverUrl,
             path = "/sessions/${sessionId.urlEncode()}/tag",
