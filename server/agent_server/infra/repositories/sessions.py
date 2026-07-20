@@ -632,6 +632,7 @@ class SessionRepositoryMixin:
         last_activity_at: str | None = None,
         context_usage: dict[str, Any] | None = None,
         rate_limit: dict[str, Any] | None = None,
+        session_meta: dict[str, Any] | None = None,
     ) -> SessionView:
         values: dict[str, Any] = {}
         if status is not None:
@@ -652,6 +653,8 @@ class SessionRepositoryMixin:
             values["context_usage_json"] = _json_dumps(context_usage)
         if rate_limit is not None:
             values["rate_limit_json"] = _json_dumps(rate_limit)
+        if session_meta is not None:
+            values["session_meta_json"] = _json_dumps(session_meta)
         async with self._engine.begin() as conn:
             row = (
                 await conn.execute(
@@ -741,6 +744,8 @@ class SessionRepositoryMixin:
         context_usage = context_usage_raw if isinstance(context_usage_raw, dict) else None
         rate_limit_raw = _json_loads(row["rate_limit_json"])
         rate_limit = rate_limit_raw if isinstance(rate_limit_raw, dict) else None
+        session_meta_raw = _json_loads(row["session_meta_json"])
+        session_meta = session_meta_raw if isinstance(session_meta_raw, dict) else None
         return SessionView(
             id=session_id,
             connectorId=row["connector_id"],
@@ -768,4 +773,5 @@ class SessionRepositoryMixin:
             runtimeSettingsOverride=runtime_override or None,
             contextUsage=context_usage,
             rateLimit=rate_limit,
+            sessionMeta=session_meta,
         )

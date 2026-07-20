@@ -516,6 +516,7 @@ async def apply_connector_notification(
                 last_activity_at=params.get("lastActivityAt"),
                 context_usage=_context_usage_param(params),
                 rate_limit=_rate_limit_param(params),
+                session_meta=_session_meta_param(params),
             )
             # An approved ExitPlanMode makes the connector send permissionMode back
             # so later turns run in execute mode instead of re-entering plan. Merge
@@ -721,6 +722,15 @@ def _context_usage_param(params: dict[str, Any]) -> dict[str, Any] | None:
 
 def _rate_limit_param(params: dict[str, Any]) -> dict[str, Any] | None:
     value = params.get("rateLimit")
+    return value if isinstance(value, dict) else None
+
+
+def _session_meta_param(params: dict[str, Any]) -> dict[str, Any] | None:
+    # The connector's session.updated carries sessionMeta once per session
+    # (model / mcpServers / slashCommands harvested from the SDK init message).
+    # Only accept a well-formed object so a malformed payload can't poison the
+    # stored column.
+    value = params.get("sessionMeta")
     return value if isinstance(value, dict) else None
 
 

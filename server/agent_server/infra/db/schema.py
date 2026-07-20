@@ -235,6 +235,11 @@ sessions = Table(
     Column("last_activity_at", Text),
     Column("context_usage_json", Text),
     Column("rate_limit_json", Text),
+    # Runtime snapshot harvested from the SDK init message (model / MCP server
+    # names / slash commands), captured once per session and surfaced as a
+    # read-only badge. Distinct from mcp_servers_json below, which holds
+    # user-set session-level MCP config overrides.
+    Column("session_meta_json", Text),
     # JSON blob of session-level MCP server config overrides. Session servers
     # take precedence over connector-level servers with the same name.
     Column("mcp_servers_json", Text),

@@ -210,6 +210,8 @@ async def _ensure_compat_schema_async(conn) -> None:  # noqa: ANN001 - SQLAlchem
         await conn.execute(text("ALTER TABLE sessions ADD COLUMN context_usage_json TEXT"))
     if not await _column_exists_async(conn, "sessions", "rate_limit_json"):
         await conn.execute(text("ALTER TABLE sessions ADD COLUMN rate_limit_json TEXT"))
+    if not await _column_exists_async(conn, "sessions", "session_meta_json"):
+        await conn.execute(text("ALTER TABLE sessions ADD COLUMN session_meta_json TEXT"))
     if not await _column_exists_async(conn, "connectors", "mcp_servers_json"):
         await conn.execute(text("ALTER TABLE connectors ADD COLUMN mcp_servers_json TEXT"))
     if not await _column_exists_async(conn, "sessions", "mcp_servers_json"):
@@ -239,6 +241,8 @@ def _ensure_compat_schema_sync(conn) -> None:  # noqa: ANN001 - SQLAlchemy conne
         conn.execute(text("ALTER TABLE sessions ADD COLUMN context_usage_json TEXT"))
     if not _column_exists_sync(conn, "sessions", "rate_limit_json"):
         conn.execute(text("ALTER TABLE sessions ADD COLUMN rate_limit_json TEXT"))
+    if not _column_exists_sync(conn, "sessions", "session_meta_json"):
+        conn.execute(text("ALTER TABLE sessions ADD COLUMN session_meta_json TEXT"))
     if not _column_exists_sync(conn, "connectors", "mcp_servers_json"):
         conn.execute(text("ALTER TABLE connectors ADD COLUMN mcp_servers_json TEXT"))
     if not _column_exists_sync(conn, "sessions", "mcp_servers_json"):

@@ -582,6 +582,10 @@ class SessionView(BaseModel):
     # connector's RateLimitEvent handling. None when not throttled (or the
     # runtime does not report it); set while quota is warning or rejected.
     rateLimit: dict[str, Any] | None = None
+    # Runtime snapshot harvested once from the SDK init message: model name,
+    # MCP server names (mcpServers), and slash commands (slashCommands). Read-only
+    # badge material. None until an init-reporting runtime (Claude) starts.
+    sessionMeta: dict[str, Any] | None = None
 
 
 class SessionPatchRequest(BaseModel):

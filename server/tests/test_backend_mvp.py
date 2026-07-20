@@ -4693,6 +4693,83 @@ def test_session_updated_context_usage_round_trips(tmp_path):
         assert gauge["autoCompactEnabled"] is True
 
 
+def test_session_updated_session_meta_round_trips(tmp_path):
+    # The connector harvests model / MCP servers / slash commands from the SDK
+    # init message once per session and rides them on session.updated as
+    # sessionMeta. The server must persist that snapshot and surface it on
+    # SessionView so clients can render a read-only badge.
+    client = make_client(tmp_path)
+    _, access_token, session_id, headers = create_connector_and_session(client)
+
+    with client.websocket_connect(
+        "/connector/ws",
+        headers={"Authorization": f"Bearer {access_token}"},
+    ) as ws:
+        ws.send_json(
+            {
+                "type": "notification",
+                "method": "session.updated",
+                "params": {
+                    "sessionId": session_id,
+                    "runtime": "codex",
+                    "lastSyncedAt": "2026-06-08T00:00:01Z",
+                    "sessionMeta": {
+                        "model": "claude-opus-4-8",
+                        "mcpServers": ["fs", "github"],
+                        "slashCommands": ["/clear", "/compact"],
+                    },
+                },
+            }
+        )
+
+        def read_meta():
+            sessions = client.get("/sessions", headers=headers).json()["sessions"]
+            current = next(session for session in sessions if session["id"] == session_id)
+            return current if current.get("sessionMeta") else None
+
+        session = wait_for(read_meta)
+        meta = session["sessionMeta"]
+        assert meta["model"] == "claude-opus-4-8"
+        assert meta["mcpServers"] == ["fs", "github"]
+        assert meta["slashCommands"] == ["/clear", "/compact"]
+
+
+def test_session_updated_session_meta_does_not_mark_unread(tmp_path):
+    # sessionMeta is a passive runtime snapshot, not a semantic change. Reporting
+    # it must not bump updated_seq (which would flip the session to unread on
+    # every reconnect that re-emits the init snapshot).
+    client = make_client(tmp_path)
+    _, access_token, session_id, headers = create_connector_and_session(client)
+
+    # Mark the session read first so we can detect any spurious unread bump.
+    client.post(f"/sessions/{session_id}/read", headers=headers)
+
+    with client.websocket_connect(
+        "/connector/ws",
+        headers={"Authorization": f"Bearer {access_token}"},
+    ) as ws:
+        ws.send_json(
+            {
+                "type": "notification",
+                "method": "session.updated",
+                "params": {
+                    "sessionId": session_id,
+                    "runtime": "codex",
+                    "lastSyncedAt": "2026-06-08T00:00:02Z",
+                    "sessionMeta": {"model": "claude-opus-4-8"},
+                },
+            }
+        )
+
+        def read_meta():
+            sessions = client.get("/sessions", headers=headers).json()["sessions"]
+            current = next(session for session in sessions if session["id"] == session_id)
+            return current if current.get("sessionMeta") else None
+
+        session = wait_for(read_meta)
+        assert session["unread"] is False
+
+
 def test_session_updated_permission_mode_persists_to_override(tmp_path):
     # After an approved ExitPlanMode, the connector switches the live client out
     # of plan mode and reports the execute mode on session.updated. The server
