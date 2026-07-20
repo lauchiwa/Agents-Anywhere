@@ -612,6 +612,8 @@
       "loadFailed": "Failed to load session.",
       "loadRuntimeSettingsFailed": "Failed to load runtime settings.",
       "sendFailed": "Failed to send message.",
+      "retry": "Retry",
+      "retryAttachmentsHint": "Attachments won't be re-sent — add them again if needed.",
       "updateTakeoverFailed": "Failed to update takeover.",
       "interruptFailed": "Failed to interrupt session.",
       "resolveApprovalFailed": "Failed to resolve approval.",

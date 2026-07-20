@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { Bell, BookOpen, Check, ChevronDown, CircleAlert, Clock, Copy, FilePenLine, Sparkles, Wrench, Zap } from "lucide-react"
+import { Bell, BookOpen, Check, ChevronDown, CircleAlert, Clock, Copy, FilePenLine, RefreshCw, Sparkles, Wrench, Zap } from "lucide-react"
 import dynamic from "next/dynamic"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
@@ -28,6 +28,7 @@ export function TimelineEntry({
   resolvingApprovalId,
   resolvingStatus,
   onResolveApproval,
+  onRetryMessage,
 }: {
   token: string
   session: SessionView
@@ -41,9 +42,10 @@ export function TimelineEntry({
     status: ApprovalResolveStatus,
     selections?: ApprovalSelection[],
   ) => void
+  onRetryMessage?: (item: TimelineItem) => void
 }) {
   if (item.type === "turn.start" || item.type === "turn.end") return null
-  if (item.type === "message") return <MessageCard token={token} session={session} item={item} />
+  if (item.type === "message") return <MessageCard token={token} session={session} item={item} onRetryMessage={onRetryMessage} />
   if (item.type === "tool") {
     // Subagent (Task) output is nested under the parent tool card. Build the
     // child nodes here and hand them to ToolCard as a slot to avoid a circular
@@ -81,11 +83,23 @@ export function TimelineEntry({
   return null
 }
 
-function MessageCard({ token, session, item }: { token: string; session: SessionView; item: TimelineItem }) {
+function MessageCard({
+  token,
+  session,
+  item,
+  onRetryMessage,
+}: {
+  token: string
+  session: SessionView
+  item: TimelineItem
+  onRetryMessage?: (item: TimelineItem) => void
+}) {
+  const tSession = useTranslations("dashboard.session")
   const text = stripInjectedAttachmentMentions(messageText(item))
   const attachments = extractAttachments(item.content)
   const isUser = item.role === "user"
   const hasAttachments = attachments.length > 0
+  const isFailed = isUser && item.status === "failed"
   const showUserStatus = isUser && (item.status === "pending" || item.status === "failed")
   const [copied, setCopied] = React.useState(false)
   const content = text ? (
@@ -139,7 +153,24 @@ function MessageCard({ token, session, item }: { token: string; session: Session
             <JsonBlock value={item.content} />
           </div>
         ) : null}
-        {showUserStatus ? <TimelineStatusBadge status={item.status} /> : null}
+        {showUserStatus ? (
+          <div className="flex items-center gap-2">
+            <TimelineStatusBadge status={item.status} />
+            {isFailed && onRetryMessage ? (
+              <button
+                type="button"
+                onClick={() => onRetryMessage(item)}
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <RefreshCw className="size-3" />
+                {tSession("retry")}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {isFailed && hasAttachments ? (
+          <span className="text-[11px] text-muted-foreground">{tSession("retryAttachmentsHint")}</span>
+        ) : null}
       </div>
     </div>
   )

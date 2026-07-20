@@ -612,6 +612,8 @@
       "loadFailed": "无法加载会话。",
       "loadRuntimeSettingsFailed": "无法加载运行时设置。",
       "sendFailed": "无法发送消息。",
+      "retry": "重试",
+      "retryAttachmentsHint": "附件不会重新发送，如有需要请重新添加。",
       "updateTakeoverFailed": "无法更新接管状态。",
       "interruptFailed": "无法中断会话。",
       "resolveApprovalFailed": "无法处理确认请求。",

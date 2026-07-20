@@ -41,7 +41,7 @@ import {
   preserveOptimisticItems,
   timelineClientMessageId,
 } from "@/components/session/optimistic-timeline"
-import { recordsOf, runtimeLabel, sortTimelineItems, textOf } from "@/components/session/session-utils"
+import { messageText as extractMessageText, recordsOf, runtimeLabel, sortTimelineItems, textOf } from "@/components/session/session-utils"
 import { useWorkspace } from "@/components/workspace-context"
 
 type SessionDetailProps = {
@@ -591,14 +591,13 @@ export function SessionDetail({
     token,
   ])
 
-  const handleSend = async (
-    content: string,
+  const deliverMessage = async (
+    clientMessageId: string,
+    messageText: string,
     attachments: AttachedFile[],
     options?: { maxBudgetUsd?: number | null },
   ): Promise<boolean> => {
-    if (!session || (!content.trim() && attachments.length === 0)) return false
-    const clientMessageId = createClientId("msg")
-    const messageText = content.trim() || tNew("attachmentOnlyPrompt")
+    if (!session) return false
     forceScrollOnNextUpdateRef.current = true
     const optimisticMessage = buildOptimisticUserMessage({
       sessionId: session.id,
@@ -608,6 +607,9 @@ export function SessionDetail({
       items: state?.items ?? [],
       nextSeq: state?.nextSeq ?? nextSeqRef.current,
     })
+    // Reusing the same clientMessageId on retry lets this fresh "pending" item
+    // replace the prior "failed" one (same optimistic id) in both the shared
+    // store and local state, so the timeline flips back to sending in place.
     addOptimisticMessage({
       clientMessageId,
       sessionId: session.id,
@@ -648,11 +650,34 @@ export function SessionDetail({
           ),
         }
       })
-      toast.error(err instanceof Error ? err.message : tSession("sendFailed"))
+      toast.error(message)
       return false
     } finally {
       setSending(false)
     }
+  }
+
+  const handleSend = async (
+    content: string,
+    attachments: AttachedFile[],
+    options?: { maxBudgetUsd?: number | null },
+  ): Promise<boolean> => {
+    if (!session || (!content.trim() && attachments.length === 0)) return false
+    const clientMessageId = createClientId("msg")
+    const messageText = content.trim() || tNew("attachmentOnlyPrompt")
+    return deliverMessage(clientMessageId, messageText, attachments, options)
+  }
+
+  // Resend a failed user message in place. The failed bubble already carries the
+  // original text in content, so no draft is lost; attachments can't be
+  // recovered (File objects are gone) — the UI hints when that applies.
+  const handleRetryMessage = (item: TimelineItem) => {
+    if (!session || sending) return
+    const clientMessageId = timelineClientMessageId(item)
+    if (!clientMessageId) return
+    const text = extractMessageText(item)
+    if (!text.trim()) return
+    void deliverMessage(clientMessageId, text, [])
   }
 
   const handleConfirmTakeover = async () => {
@@ -927,6 +952,7 @@ export function SessionDetail({
                   resolvingApprovalId={resolvingApprovalId}
                   resolvingStatus={resolvingStatus}
                   onResolveApproval={handleResolveApproval}
+                  onRetryMessage={handleRetryMessage}
                 />
               ),
             )}
