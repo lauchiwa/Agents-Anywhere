@@ -82,6 +82,7 @@ import com.agentsanywhere.app.feature.sessiondetail.ApprovalQuestion
 import com.agentsanywhere.app.feature.sessiondetail.SessionDetailController
 import com.agentsanywhere.app.feature.sessiondetail.SessionDetailState
 import com.agentsanywhere.app.feature.sessiondetail.SessionStreamEvent
+import com.agentsanywhere.app.feature.sessiondetail.TimelineMessage
 import com.agentsanywhere.app.feature.sessiondetail.TimelineApproval
 import com.agentsanywhere.app.feature.terminal.RemoteTerminalForegroundService
 import com.agentsanywhere.app.feature.terminal.RemoteTerminalPool
@@ -516,6 +517,58 @@ fun SessionDetailScreen(
         sendText(text, maxBudgetUsd)
     }
 
+    // Resend a failed user message in place. Reusing the original
+    // clientMessageId lets the fresh "pending" bubble replace the prior
+    // "failed" one (upsertOptimisticMessage dedupes by id), so the timeline
+    // flips back to sending without duplicating. The composer draft is left
+    // untouched — the failed bubble already carries the text, so nothing the
+    // user is currently typing is disturbed. Attachments can't be recovered
+    // (the local files are gone), so retry only resends text.
+    fun retryMessage(message: TimelineMessage) {
+        val id = sessionId ?: return
+        val text = message.text.trimEnd('\r', '\n')
+        if (text.isBlank()) return
+        val clientMessageId = message.clientMessageId ?: message.id
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        scope.launch {
+            state = controller.addOptimisticMessage(
+                sessionId = id,
+                state = state,
+                text = text,
+                clientMessageId = clientMessageId,
+                attachments = emptyList(),
+            )
+            forceLatestRequest += 1
+            controller.sendMessage(
+                sessionId = id,
+                content = text,
+                clientMessageId = clientMessageId,
+                uploadedAttachments = emptyList(),
+                maxBudgetUsd = null,
+            )
+                .onSuccess { result ->
+                    state = controller.markOptimisticMessage(
+                        sessionId = id,
+                        state = state,
+                        clientMessageId = clientMessageId,
+                        status = "running",
+                        turnId = result.turnId,
+                        attachments = result.attachments,
+                    )
+                }
+                .onFailure { error ->
+                    val message = error.message ?: context.getString(R.string.session_send_failed)
+                    state = controller.markOptimisticMessage(
+                        sessionId = id,
+                        state = state,
+                        clientMessageId = clientMessageId,
+                        status = "failed",
+                    ).copy(actionError = message)
+                    showError(message)
+                }
+        }
+    }
+
     fun applyTakeover(enabled: Boolean) {
         val id = sessionId ?: return
         if (state.takeoverInFlight) return
@@ -822,6 +875,7 @@ fun SessionDetailScreen(
                                 onPreviewAttachment = { previewImage = AttachmentPreview.Remote(it) },
                                 onCopyMessage = ::copyMessageText,
                                 onOpenFile = ::openReferencedFile,
+                                onRetryMessage = ::retryMessage,
                             )
                         }
                         ComposerVeil(

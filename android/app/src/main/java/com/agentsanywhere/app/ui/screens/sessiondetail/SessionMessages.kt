@@ -82,6 +82,7 @@ import com.agentsanywhere.app.feature.sessiondetail.SkillItem
 import com.agentsanywhere.app.ui.designsystem.LocalAAColors
 import com.agentsanywhere.app.ui.designsystem.noRippleClickable
 import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.Lucide
@@ -238,6 +239,7 @@ internal fun MessageList(
     onPreviewAttachment: (TimelineAttachment) -> Unit,
     onCopyMessage: (String) -> Unit,
     onOpenFile: (String) -> Unit,
+    onRetryMessage: (TimelineMessage) -> Unit,
 ) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -406,6 +408,7 @@ internal fun MessageList(
                                 onPreviewAttachment = onPreviewAttachment,
                                 onCopyMessage = onCopyMessage,
                                 onOpenFile = onOpenFile,
+                                onRetryMessage = onRetryMessage,
                                 childrenByParent = childrenByParent,
                             )
                             is TimelineRenderItem.ToolRun -> ToolRunGroup(
@@ -843,6 +846,7 @@ private fun TimelineMessageRow(
     onPreviewAttachment: (TimelineAttachment) -> Unit,
     onCopyMessage: (String) -> Unit,
     onOpenFile: (String) -> Unit,
+    onRetryMessage: (TimelineMessage) -> Unit,
     childrenByParent: Map<String, List<TimelineMessage>> = emptyMap(),
 ) {
     when (message.kind) {
@@ -863,7 +867,7 @@ private fun TimelineMessageRow(
         TimelineMessageKind.DeferredToolsDelta -> DeferredToolsDeltaPill(message, darkMode)
         TimelineMessageKind.InvokedSkills -> InvokedSkillsPill(message, darkMode)
         TimelineMessageKind.Text -> when (message.author) {
-            MessageAuthor.User -> UserBubble(message, darkMode, sessionId, controller, onPreviewAttachment, onCopyMessage)
+            MessageAuthor.User -> UserBubble(message, darkMode, sessionId, controller, onPreviewAttachment, onCopyMessage, onRetryMessage)
             MessageAuthor.Agent -> AgentMarkdownText(message.text, darkMode, onOpenFile = onOpenFile)
             MessageAuthor.Tool -> ToolPlaceholder(message, darkMode)
         }
@@ -878,9 +882,11 @@ private fun UserBubble(
     controller: SessionDetailController,
     onPreviewAttachment: (TimelineAttachment) -> Unit,
     onCopyMessage: (String) -> Unit,
+    onRetryMessage: (TimelineMessage) -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val maxBubbleWidth = maxWidth * 0.78f
+        val isFailed = message.status == "failed"
         val meta = when (message.status) {
             "failed" -> stringResource(R.string.session_status_failed)
             else -> ""
@@ -1354,6 +1360,14 @@ private fun ToolActivityCard(
                 val copyText = listOf(message.detail, message.body).filter { it.isNotBlank() }.joinToString("\n")
                 val clipboard = LocalClipboardManager.current
                 var copyDone by remember { mutableStateOf(false) }
+                // Swap the copy icon for a check for ~1.1s so the tap has visible
+                // feedback; previously copyDone was set but never read (dead code).
+                LaunchedEffect(copyDone) {
+                    if (copyDone) {
+                        delay(1_100)
+                        copyDone = false
+                    }
+                }
                 Box {
                     ToolActivityDetailCard(
                         message = message,
@@ -1377,9 +1391,9 @@ private fun ToolActivityCard(
                                 .alpha(0.55f),
                         ) {
                             androidx.compose.material3.Icon(
-                                imageVector = Lucide.Copy,
+                                imageVector = if (copyDone) Lucide.Check else Lucide.Copy,
                                 contentDescription = "Copy",
-                                tint = if (darkMode) Color(0xFFA1A1AA) else Color(0xFF7C7B76),
+                                tint = if (copyDone) Color(0xFFEAB308) else if (darkMode) Color(0xFFA1A1AA) else Color(0xFF7C7B76),
                                 modifier = Modifier.size(14.dp),
                             )
                         }
