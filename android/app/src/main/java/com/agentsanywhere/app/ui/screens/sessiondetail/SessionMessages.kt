@@ -85,6 +85,7 @@ import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.RefreshCw
 import com.valentinilk.shimmer.shimmer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -1921,6 +1922,57 @@ internal fun EmptyDetailMessage(message: String) {
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium,
         )
+    }
+}
+
+@Composable
+internal fun SessionDetailErrorState(
+    message: String,
+    darkMode: Boolean,
+    onRetry: () -> Unit,
+) {
+    val muted = if (darkMode) Color(0xFFA1A1AA) else Color(0xFF7C7B76)
+    val accent = if (darkMode) Color(0xFFE4E4E7) else Color(0xFF2B2C29)
+    val border = if (darkMode) Color(0xFF3F3F46) else Color(0xFFE0DED8)
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.padding(horizontal = 32.dp),
+        ) {
+            Text(
+                text = message.ifBlank { stringResource(R.string.session_load_failed) },
+                color = muted,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+            )
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .border(1.dp, border, RoundedCornerShape(999.dp))
+                    .noRippleClickable(onClick = onRetry)
+                    .padding(horizontal = 18.dp, vertical = 9.dp),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                androidx.compose.material3.Icon(
+                    imageVector = Lucide.RefreshCw,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(15.dp),
+                )
+                Text(
+                    text = stringResource(R.string.session_retry),
+                    color = accent,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
     }
 }
 

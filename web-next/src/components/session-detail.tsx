@@ -207,6 +207,10 @@ export function SessionDetail({
   const [runtimeSettingsBusy, setRuntimeSettingsBusy] = React.useState(false)
   const [showScrollBottom, setShowScrollBottom] = React.useState(false)
   const [loadingOlder, setLoadingOlder] = React.useState(false)
+  // Live SSE connection health. Starts optimistic (true) so the reconnect
+  // banner never flashes during the initial connect; flips to false only once
+  // the EventSource actually errors, and back to true on (re)open.
+  const [liveConnected, setLiveConnected] = React.useState(true)
   const [pendingTakeover, setPendingTakeover] = React.useState<boolean | null>(null)
   const [composerDraftState, setComposerDraftState] = React.useState<ComposerDraftState>(() => ({
     sessionId,
@@ -534,6 +538,17 @@ export function SessionDetail({
 
     try {
       eventSource = new EventSource(dashboardApi.sessionEventsUrl(token, sessionId))
+      eventSource.onopen = () => {
+        if (cancelled) return
+        setLiveConnected(true)
+      }
+      eventSource.onerror = () => {
+        if (cancelled) return
+        // The browser auto-reconnects an EventSource on error; surface the
+        // paused-live state so the user knows updates are on the 3s poll
+        // fallback until the stream reopens.
+        setLiveConnected(false)
+      }
       eventSource.onmessage = (event) => {
         if (cancelled || !event.data) return
         let envelope: SessionEventEnvelope | null = null
@@ -555,6 +570,7 @@ export function SessionDetail({
       }
     } catch {
       eventSource = null
+      setLiveConnected(false)
     }
 
     const intervalId = window.setInterval(() => {
@@ -857,6 +873,13 @@ export function SessionDetail({
           <AlertTitle>{tSession("refreshFailed")}</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
+      ) : null}
+
+      {!liveConnected && !isLocalOptimisticSession ? (
+        <div className="mx-auto mt-2 flex w-[calc(100%-2rem)] max-w-3xl items-center gap-2 rounded-lg border border-amber-500/35 bg-amber-500/5 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+          <Loader2 className="size-3.5 shrink-0 animate-spin" />
+          <span>{tSession("liveReconnecting")}</span>
+        </div>
       ) : null}
 
       <div className="relative min-h-0 flex-1 overflow-hidden">

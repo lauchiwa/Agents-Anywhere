@@ -608,6 +608,7 @@
       "panelShell": "Shell",
       "unavailable": "Session unavailable",
       "refreshFailed": "Refresh failed",
+      "liveReconnecting": "Live updates paused — reconnecting…",
       "loadFailed": "Failed to load session.",
       "loadRuntimeSettingsFailed": "Failed to load runtime settings.",
       "sendFailed": "Failed to send message.",

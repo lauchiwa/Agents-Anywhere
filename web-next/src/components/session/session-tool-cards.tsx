@@ -10,6 +10,8 @@ import { ApprovalCard } from "@/components/session/session-approval-card"
 import { MonacoCodeView, monacoLanguageForFile } from "@/components/monaco-code-view"
 import { openSessionFilePreview } from "@/components/markdown-text"
 import { cn } from "@/lib/utils"
+import { copyText } from "@/lib/clipboard"
+import { toast } from "sonner"
 import { highlightCode } from "@/lib/code-highlight"
 import { dashboardApi } from "@/features/dashboard/api"
 import type { Approval, ApprovalResolveStatus, ApprovalSelection, SessionView, TimelineItem } from "@/features/dashboard/types"
@@ -305,9 +307,12 @@ function CodePanelFrame({
             type="button"
             className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
             onClick={() => {
-              navigator.clipboard.writeText(code).catch(() => undefined)
-              setCopied(true)
-              setTimeout(() => setCopied(false), 1200)
+              copyText(code)
+                .then(() => {
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1200)
+                })
+                .catch((err) => toast.error(err instanceof Error ? err.message : "Copy failed"))
             }}
           >
             {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}

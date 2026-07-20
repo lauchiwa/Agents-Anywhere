@@ -23,10 +23,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -800,7 +802,11 @@ fun SessionDetailScreen(
                         when {
                             sessionId == null -> EmptyDetailMessage(stringResource(R.string.session_open_from_list))
                             state.isLoading && state.messages.isEmpty() -> SessionDetailLoadingState(darkMode = darkMode)
-                            state.errorMessage != null && state.messages.isEmpty() -> EmptyDetailMessage(state.errorMessage.orEmpty())
+                            state.errorMessage != null && state.messages.isEmpty() -> SessionDetailErrorState(
+                                message = state.errorMessage.orEmpty(),
+                                darkMode = darkMode,
+                                onRetry = { scope.launch { refetch(showLoading = true) } },
+                            )
                             state.messages.isEmpty() -> SessionWelcomeMessage(darkMode = darkMode)
                             else -> MessageList(
                                 messages = state.messages,
@@ -867,6 +873,15 @@ fun SessionDetailScreen(
                                 { showSessionMenu = true }
                             } else null,
                         )
+                        if (state.session != null && (!connectorOnline || !state.sseConnected)) {
+                            SessionConnectionBanner(
+                                offline = !connectorOnline,
+                                darkMode = darkMode,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 62.dp),
+                            )
+                        }
                         AAToastHost(
                             hostState = snackbarHostState,
                             modifier = Modifier
@@ -1092,6 +1107,54 @@ fun SessionDetailScreen(
             sessionId = sessionId.orEmpty(),
             controller = controller,
             onDismiss = { previewImage = null },
+        )
+    }
+}
+
+@Composable
+private fun SessionConnectionBanner(
+    offline: Boolean,
+    darkMode: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    // Offline (device disconnected) is a hard-red state; reconnecting (live SSE
+    // dropped but device still online) is a softer amber. Mirrors the web
+    // reconnecting banner so both clients give the same "updates paused" signal.
+    val dotColor = if (offline) Color(0xFFEF4444) else Color(0xFFFBBF24)
+    val bg = if (offline) {
+        if (darkMode) Color(0xFF3A1417) else Color(0xFFFDECEC)
+    } else {
+        if (darkMode) Color(0xFF3A2E12) else Color(0xFFFDF6E3)
+    }
+    val textColor = if (offline) {
+        if (darkMode) Color(0xFFFCA5A5) else Color(0xFFB91C1C)
+    } else {
+        if (darkMode) Color(0xFFFCD34D) else Color(0xFF92600A)
+    }
+    val label = if (offline) {
+        stringResource(R.string.session_banner_offline)
+    } else {
+        stringResource(R.string.session_banner_reconnecting)
+    }
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(bg)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(dotColor),
+        )
+        Text(
+            text = label,
+            color = textColor,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }

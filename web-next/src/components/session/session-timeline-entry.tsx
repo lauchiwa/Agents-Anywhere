@@ -4,7 +4,9 @@ import React from "react"
 import { Bell, BookOpen, Check, ChevronDown, CircleAlert, Clock, Copy, FilePenLine, Sparkles, Wrench, Zap } from "lucide-react"
 import dynamic from "next/dynamic"
 import { useTranslations } from "next-intl"
+import { toast } from "sonner"
 
+import { copyText } from "@/lib/clipboard"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { JsonBlock, TimelineStatusBadge, ToolCard } from "@/components/session/session-tool-cards"
 import { openSessionFilePreview } from "@/components/markdown-text"
@@ -117,9 +119,12 @@ function MessageCard({ token, session, item }: { token: string; session: Session
                 type="button"
                 aria-label={copied ? "Copied" : "Copy"}
                 onClick={() => {
-                  navigator.clipboard.writeText(text).catch(() => undefined)
-                  setCopied(true)
-                  setTimeout(() => setCopied(false), 1200)
+                  copyText(text)
+                    .then(() => {
+                      setCopied(true)
+                      setTimeout(() => setCopied(false), 1200)
+                    })
+                    .catch((err) => toast.error(err instanceof Error ? err.message : "Copy failed"))
                 }}
                 className="absolute -right-7 top-0 rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover/msg:opacity-100"
               >
@@ -172,10 +177,12 @@ function NotificationEntry({ item }: { item: TimelineItem }) {
   const [copied, setCopied] = React.useState(false)
   const copy = () => {
     if (!message) return
-    navigator.clipboard.writeText(message).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    })
+    copyText(message)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : "Copy failed"))
   }
   return (
     <div className="flex items-start gap-2 rounded-lg border border-amber-500/35 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">

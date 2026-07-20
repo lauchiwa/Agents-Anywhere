@@ -607,6 +607,7 @@
       "panelFiles": "文件",
       "panelShell": "Shell",
       "unavailable": "会话不可用",
+      "liveReconnecting": "实时更新已断开，正在重连…",
       "refreshFailed": "刷新失败",
       "loadFailed": "无法加载会话。",
       "loadRuntimeSettingsFailed": "无法加载运行时设置。",

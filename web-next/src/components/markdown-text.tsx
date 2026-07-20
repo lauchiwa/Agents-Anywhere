@@ -8,10 +8,12 @@ import { Copy, Check, ChevronDown, ExternalLink } from "lucide-react"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
+import { copyText } from "@/lib/clipboard"
 import { highlightCode } from "@/lib/code-highlight"
 import { openNativeFilePreviewWindow } from "@/components/panels/files-panel"
 import type { SessionView } from "@/features/dashboard/types"
 import { useTranslations } from "next-intl"
+import { toast } from "sonner"
 
 export function MarkdownText({
   text,
@@ -290,9 +292,12 @@ function MarkdownCodeBlock({ code, language }: { code: string; language: string 
           type="button"
           className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
           onClick={() => {
-            navigator.clipboard.writeText(code).catch(() => undefined)
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1200)
+            copyText(code)
+              .then(() => {
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1200)
+              })
+              .catch((err) => toast.error(err instanceof Error ? err.message : tSession("copyCode")))
           }}
           aria-label={tSession("copyCode")}
         >

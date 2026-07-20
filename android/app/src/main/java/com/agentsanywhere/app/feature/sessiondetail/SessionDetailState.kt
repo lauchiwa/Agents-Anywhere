@@ -12,7 +12,9 @@ data class SessionDetailState(
     val loadingOlder: Boolean = false,
     val errorMessage: String? = null,
     val actionError: String? = null,
-    val sseConnected: Boolean = false,
+    // Starts true so the "reconnecting" banner never flashes during the initial
+    // connect; flips to false only when the stream actually disconnects/fails.
+    val sseConnected: Boolean = true,
     val takeoverInFlight: Boolean = false,
     val sending: Boolean = false,
     val interrupting: Boolean = false,

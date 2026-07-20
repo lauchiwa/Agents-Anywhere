@@ -298,9 +298,13 @@
     <string name="session_agent_interrupting">Interrupting %1$s</string>
     <string name="session_agent_fallback">Agent</string>
     <string name="session_device_offline_placeholder">Device is offline. You can\'t chat right now.</string>
+    <string name="session_banner_offline">Device offline — live updates paused</string>
+    <string name="session_banner_reconnecting">Reconnecting — live updates paused…</string>
     <string name="session_reply_to">Reply to %1$s</string>
     <string name="session_read_only_placeholder">Read only. Turn on takeover to send messages.</string>
     <string name="session_open_from_list">Open a session from the list.</string>
+    <string name="session_retry">Retry</string>
+    <string name="session_load_failed">Failed to load this session.</string>
     <string name="session_title_fallback">Session</string>
     <string name="session_device_offline_title">Device is offline</string>
     <string name="session_device_offline_body">This session can\'t receive messages until its device reconnects.</string>
