@@ -118,6 +118,15 @@ class _SdkSessionRuntime:
     # session.updated as permissionMode so the server persists it to the session
     # override and later turns run in execute mode instead of re-entering plan.
     pending_permission_mode: str | None = None
+    # Session metadata (model / MCP servers / slash commands) extracted from the
+    # SDK's SystemMessage(subtype="init"). The init message carries no content
+    # blocks, so it used to be dropped by _sdk_message_to_raw; instead we harvest
+    # these fields here and ride them on session.updated as sessionMeta.
+    session_meta: dict[str, Any] | None = None
+    # Guards "emit sessionMeta exactly once per session". A reconnect storm can
+    # replay the same init dozens of times (observed 622x); the runtime is cached
+    # per session_id and survives reconnects, so this flag suppresses the repeats.
+    session_meta_emitted: bool = False
 
 
 @dataclass(slots=True)
@@ -726,6 +735,8 @@ class ClaudeSdkAdapter:
                         await self._capture_rate_limit(runtime, buffered)
                     elif _is_hook_event_message(buffered):
                         emitted_live_content = await self._emit_hook_event(runtime, turn_id, buffered) or emitted_live_content
+                    elif _is_init_message(buffered):
+                        await self._capture_session_meta(runtime, buffered)
                     else:
                         emitted_live_content = await self._emit_sdk_message(runtime, turn_id, buffered) or emitted_live_content
                 if not emitted_live_content:
@@ -770,6 +781,13 @@ class ClaudeSdkAdapter:
                 await self._emit_pending_user_message(runtime, turn_id)
                 emitted_live_content = await self._emit_hook_event(runtime, turn_id, message) or emitted_live_content
                 continue
+            if _is_init_message(message):
+                # Session bootstrap metadata. Harvest model/MCP/skills once and
+                # ride them on session.updated; never route to _emit_sdk_message
+                # (it carries no content blocks and would just be dropped). Carries
+                # no timeline content, so it doesn't count as emitted_live_content.
+                await self._capture_session_meta(runtime, message)
+                continue
             if runtime.external_session_id is None:
                 buffered_messages.append(message)
                 continue
@@ -787,6 +805,8 @@ class ClaudeSdkAdapter:
                     await self._capture_rate_limit(runtime, buffered)
                 elif _is_hook_event_message(buffered):
                     await self._emit_hook_event(runtime, turn_id, buffered)
+                elif _is_init_message(buffered):
+                    await self._capture_session_meta(runtime, buffered)
                 else:
                     await self._emit_sdk_message(runtime, turn_id, buffered)
             await self._finalize_live_stream_items(runtime, turn_id, status=status)
@@ -1059,6 +1079,12 @@ class ClaudeSdkAdapter:
             payload["contextUsage"] = runtime.context_usage
         if runtime.rate_limit is not None:
             payload["rateLimit"] = runtime.rate_limit
+        if runtime.session_meta is not None:
+            # Harvested from the init message. Cleared once emitted so it rides
+            # exactly one session.updated even though init is replayed on every
+            # reconnect (session_meta_emitted blocks re-capture thereafter).
+            payload["sessionMeta"] = runtime.session_meta
+            runtime.session_meta = None
         if runtime.pending_permission_mode is not None:
             # An approved ExitPlanMode: tell the server to persist the execution
             # mode as the session override so the next turn leaves plan mode.
@@ -1083,6 +1109,19 @@ class ClaudeSdkAdapter:
         if snapshot.get("status") == "allowed" and runtime.rate_limit is None:
             return
         runtime.rate_limit = snapshot
+        await self._emit_session_update(runtime, status="running")
+
+    async def _capture_session_meta(self, runtime: _SdkSessionRuntime, message: Any) -> None:
+        # Harvest model / MCP / slash-command metadata from the init message and
+        # ride it on one session.updated. Guarded so a reconnect storm replaying
+        # the same init (observed 622x) emits sessionMeta only once per session.
+        if runtime.session_meta_emitted:
+            return
+        meta = _session_meta_from_message(message)
+        if not meta:
+            return
+        runtime.session_meta = meta
+        runtime.session_meta_emitted = True
         await self._emit_session_update(runtime, status="running")
 
     async def _capture_context_usage(self, runtime: _SdkSessionRuntime, client: Any) -> None:
@@ -2080,6 +2119,49 @@ _TASK_MESSAGE_CLASSES = frozenset(
 # Terminal sub-agent statuses. task_updated reports the raw "killed"; a
 # task_notification maps that to "stopped". Either means the sub-agent finished.
 _TERMINAL_TASK_STATUSES = frozenset({"completed", "failed", "stopped", "killed"})
+
+
+def _is_init_message(message: Any) -> bool:
+    # The SDK hands session bootstrap metadata as SystemMessage(subtype="init").
+    # It carries no content blocks, so _sdk_message_to_raw drops it (622x under a
+    # reconnect storm). We intercept it before that to harvest session metadata.
+    subtype = _optional_string(_extract_attr(message, "subtype"))
+    return subtype == "init"
+
+
+def _session_meta_from_message(message: Any) -> dict[str, Any] | None:
+    # Pull model / MCP servers / slash commands out of the init message's data
+    # dict (CLI wire payload, passed through verbatim by the SDK). permissionMode
+    # is deliberately NOT harvested here: it already lives on the session's
+    # runtimeSettingsOverride (the turn-start source of truth), so mirroring it
+    # would create a double-write. Returns None when nothing useful is present.
+    data = _extract_attr(message, "data")
+    if not isinstance(data, dict):
+        return None
+    meta: dict[str, Any] = {}
+    model = _optional_string(data.get("model"))
+    if model:
+        meta["model"] = model
+    mcp_servers = data.get("mcp_servers")
+    if isinstance(mcp_servers, list) and mcp_servers:
+        # Normalize to a list of server names; entries may be plain strings or
+        # dicts like {"name": "...", "status": "..."}.
+        names: list[str] = []
+        for entry in mcp_servers:
+            if isinstance(entry, str):
+                names.append(entry)
+            elif isinstance(entry, dict):
+                name = _optional_string(entry.get("name"))
+                if name:
+                    names.append(name)
+        if names:
+            meta["mcpServers"] = names
+    slash_commands = data.get("slash_commands")
+    if isinstance(slash_commands, list) and slash_commands:
+        commands = [c for c in (_optional_string(x) for x in slash_commands) if c]
+        if commands:
+            meta["slashCommands"] = commands
+    return meta or None
 
 
 def _is_rate_limit_message(message: Any) -> bool:

@@ -172,6 +172,27 @@ class SystemThenAssistantClient(FakeClient):
         yield FakeResultMessage(session_id="claude_session_system")
 
 
+class SessionMetaClient(FakeClient):
+    async def receive_response(self):
+        # An init system message carrying real bootstrap metadata, yielded twice
+        # to mimic a reconnect storm; sessionMeta must be emitted exactly once.
+        init_data = {
+            "model": "claude-sonnet-5",
+            "mcp_servers": [
+                {"name": "filesystem", "status": "connected"},
+                "playwright",
+            ],
+            "slash_commands": ["compact", "review"],
+        }
+        yield FakeSystemMessage(subtype="init", data=dict(init_data))
+        yield FakeSystemMessage(subtype="init", data=dict(init_data))
+        yield FakeAssistantMessage(
+            message_id="msg_meta",
+            content=[FakeTextBlock(text="ready")],
+        )
+        yield FakeResultMessage(session_id="claude_session_meta")
+
+
 class StreamingDeltaClient(FakeClient):
     async def receive_response(self):
         yield StreamEvent(
@@ -965,6 +986,53 @@ async def test_claude_sdk_adapter_turn_finishes_when_context_gauge_unavailable()
         params.get("contextUsage") is not None
         for method, params in notifications
         if method == "session.updated"
+    )
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_emits_session_meta_once_from_init():
+    class SessionMetaSdk(FakeSdk):
+        ClaudeSDKClient = SessionMetaClient
+
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    adapter = ClaudeSdkAdapter(
+        notification_sink=sink,
+        sdk_module=SessionMetaSdk,
+        history_adapter=RecordingHistoryAdapter(),
+    )
+    await adapter.start_turn(
+        {
+            "sessionId": "sess_meta",
+            "cwd": "/repo",
+            "externalSessionId": "claude_session_meta",
+            "content": "hi",
+        }
+    )
+    await adapter._sessions["sess_meta"].active_task
+
+    # The init message is harvested into sessionMeta and rides session.updated.
+    meta_updates = [
+        params["sessionMeta"]
+        for method, params in notifications
+        if method == "session.updated" and params.get("sessionMeta") is not None
+    ]
+    # Replayed init (reconnect storm) must not re-emit: exactly one carrier.
+    assert len(meta_updates) == 1, "sessionMeta must be emitted exactly once"
+    meta = meta_updates[0]
+    assert meta["model"] == "claude-sonnet-5"
+    assert meta["mcpServers"] == ["filesystem", "playwright"]
+    assert meta["slashCommands"] == ["compact", "review"]
+    # permissionMode is intentionally not mirrored into sessionMeta.
+    assert "permissionMode" not in meta
+
+    # The init message must never surface as a timeline item (no content blocks).
+    assert not any(
+        method == "timeline.itemUpsert" and params["item"].get("role") == "system"
+        for method, params in notifications
     )
 
 
