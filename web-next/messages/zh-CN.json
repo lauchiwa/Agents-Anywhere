@@ -687,6 +687,8 @@
       "rateLimitResets": "{time} 重置",
       "rateLimitUtilization": "已用 {percentage}%",
       "planMode": "规划模式",
+      "bypassPermissions": "已绕过审批",
+      "bypassPermissionsHint": "所有工具调用在进入审批提示前就被自动批准，不会出现审批卡片，会话将无人值守运行。",
       "sessionMetaModel": "模型",
       "sessionMetaMcpServers": "MCP 服务",
       "sessionMetaSlashCommands": "斜杠命令",

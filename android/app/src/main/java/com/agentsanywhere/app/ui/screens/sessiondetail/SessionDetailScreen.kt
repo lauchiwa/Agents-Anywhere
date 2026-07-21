@@ -928,13 +928,27 @@ fun SessionDetailScreen(
                                 { showSessionMenu = true }
                             } else null,
                         )
-                        if (state.session != null && (!connectorOnline || !state.sseConnected)) {
+                        val connectionBannerVisible = state.session != null && (!connectorOnline || !state.sseConnected)
+                        if (connectionBannerVisible) {
                             SessionConnectionBanner(
                                 offline = !connectorOnline,
                                 darkMode = darkMode,
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)
                                     .padding(top = 62.dp),
+                            )
+                        }
+                        // Under bypassPermissions the CLI auto-approves every tool
+                        // call before the connector's approval callback runs, so no
+                        // approval card ever appears. Surface it so the user knows
+                        // the session runs unattended. Offset below the connection
+                        // banner when both are visible so they don't overlap.
+                        if (state.session?.runtimeSettings?.get("permissionMode") == "bypassPermissions") {
+                            SessionBypassPermissionsBanner(
+                                darkMode = darkMode,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = if (connectionBannerVisible) 102.dp else 62.dp),
                             )
                         }
                         AAToastHost(
@@ -1207,6 +1221,39 @@ private fun SessionConnectionBanner(
         )
         Text(
             text = label,
+            color = textColor,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun SessionBypassPermissionsBanner(
+    darkMode: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    // A hard-red "approvals bypassed" pill: under bypassPermissions the CLI
+    // auto-approves every tool call, so approval cards never appear. Mirrors the
+    // web BypassPermissionsBadge so both clients give the same unattended signal.
+    val bg = if (darkMode) Color(0xFF3A1417) else Color(0xFFFDECEC)
+    val textColor = if (darkMode) Color(0xFFFCA5A5) else Color(0xFFB91C1C)
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(bg)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(Color(0xFFEF4444)),
+        )
+        Text(
+            text = stringResource(R.string.session_banner_bypass_permissions),
             color = textColor,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,

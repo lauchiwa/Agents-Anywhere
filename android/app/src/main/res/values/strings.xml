@@ -300,6 +300,7 @@
     <string name="session_device_offline_placeholder">Device is offline. You can\'t chat right now.</string>
     <string name="session_banner_offline">Device offline — live updates paused</string>
     <string name="session_banner_reconnecting">Reconnecting — live updates paused…</string>
+    <string name="session_banner_bypass_permissions">Approvals bypassed — every tool runs unattended</string>
     <string name="session_reply_to">Reply to %1$s</string>
     <string name="session_read_only_placeholder">Read only. Turn on takeover to send messages.</string>
     <string name="session_open_from_list">Open a session from the list.</string>

@@ -687,6 +687,8 @@
       "rateLimitResets": "Resets {time}",
       "rateLimitUtilization": "{percentage}% used",
       "planMode": "Plan mode",
+      "bypassPermissions": "Approvals bypassed",
+      "bypassPermissionsHint": "Every tool call is auto-approved before it reaches an approval prompt. No approval cards will appear — the session runs unattended.",
       "sessionMetaModel": "Model",
       "sessionMetaMcpServers": "MCP servers",
       "sessionMetaSlashCommands": "Slash commands",

@@ -198,6 +198,7 @@ export function SessionViewHeader({
           <ContextUsageBadge session={session} />
           <RateLimitBadge session={session} />
           <PlanModeBadge session={session} />
+          <BypassPermissionsBadge session={session} />
           <SessionMetaInfoBadge session={session} />
           <div className="ml-auto flex items-center gap-1">
             <DropdownMenu>
@@ -604,6 +605,28 @@ function PlanModeBadge({ session }: { session: SessionViewModel }) {
     <Badge variant="secondary" className="shrink-0 cursor-default font-normal">
       {t("planMode")}
     </Badge>
+  )
+}
+
+// Bypass-permissions indicator: under "bypassPermissions" the CLI auto-approves
+// every tool call before the connector's approval callback is ever consulted,
+// so no approval card will appear. Surface it so the user understands the
+// session runs unattended — and isn't waiting on an approval that never comes.
+function BypassPermissionsBadge({ session }: { session: SessionViewModel }) {
+  const t = useTranslations("dashboard.session")
+  const settings = session.runtimeSettings as { permissionMode?: unknown } | null | undefined
+  if (!settings || settings.permissionMode !== "bypassPermissions") return null
+  return (
+    <HoverCard openDelay={120} closeDelay={80}>
+      <HoverCardTrigger asChild>
+        <Badge variant="destructive" className="shrink-0 cursor-default font-normal">
+          {t("bypassPermissions")}
+        </Badge>
+      </HoverCardTrigger>
+      <HoverCardContent align="end" sideOffset={10} className="w-64 rounded-xl p-3 text-sm">
+        <div className="text-muted-foreground">{t("bypassPermissionsHint")}</div>
+      </HoverCardContent>
+    </HoverCard>
   )
 }
 

@@ -300,6 +300,7 @@
     <string name="session_device_offline_placeholder">设备已离线，暂时不能聊天。</string>
     <string name="session_banner_offline">设备已离线，实时更新已暂停</string>
     <string name="session_banner_reconnecting">正在重连，实时更新已暂停…</string>
+    <string name="session_banner_bypass_permissions">已绕过审批 — 所有工具将无人值守运行</string>
     <string name="session_reply_to">回复 %1$s</string>
     <string name="session_read_only_placeholder">当前只读。开启接管后即可发送消息。</string>
     <string name="session_open_from_list">从列表中打开一个会话。</string>
