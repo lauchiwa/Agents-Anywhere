@@ -193,6 +193,31 @@ class SessionMetaClient(FakeClient):
         yield FakeResultMessage(session_id="claude_session_meta")
 
 
+class CompactBoundaryClient(FakeClient):
+    async def receive_response(self):
+        # The CLI emits a compact_boundary SystemMessage on the live stream when
+        # it auto-compacts the context window. It carries no content blocks, so
+        # the adapter must intercept it before _sdk_message_to_raw drops it and
+        # render the same "context compacted" separator as the replay path.
+        yield FakeAssistantMessage(
+            message_id="msg_before_compact",
+            content=[FakeTextBlock(text="working on it")],
+        )
+        yield FakeSystemMessage(
+            subtype="compact_boundary",
+            data={
+                "uuid": "compact_uuid_1",
+                "session_id": "claude_session_compact",
+                "compactMetadata": {
+                    "trigger": "auto",
+                    "preTokens": 180000,
+                    "postTokens": 42000,
+                },
+            },
+        )
+        yield FakeResultMessage(session_id="claude_session_compact")
+
+
 class StreamingDeltaClient(FakeClient):
     async def receive_response(self):
         yield StreamEvent(
@@ -1034,6 +1059,47 @@ async def test_claude_sdk_adapter_emits_session_meta_once_from_init():
         method == "timeline.itemUpsert" and params["item"].get("role") == "system"
         for method, params in notifications
     )
+
+
+@pytest.mark.anyio
+async def test_claude_sdk_adapter_emits_compact_boundary_on_live_stream():
+    class CompactSdk(FakeSdk):
+        ClaudeSDKClient = CompactBoundaryClient
+
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def sink(method: str, params: dict[str, Any]) -> None:
+        notifications.append((method, params))
+
+    adapter = ClaudeSdkAdapter(
+        notification_sink=sink,
+        sdk_module=CompactSdk,
+        history_adapter=RecordingHistoryAdapter(),
+    )
+    await adapter.start_turn(
+        {
+            "sessionId": "sess_compact",
+            "cwd": "/repo",
+            "externalSessionId": "claude_session_compact",
+            "content": "hi",
+        }
+    )
+    await adapter._sessions["sess_compact"].active_task
+
+    # The compact_boundary must reach the timeline as a "context compacted"
+    # separator (content.kind == "compact") rather than being silently dropped.
+    compact_items = [
+        params["item"]
+        for method, params in notifications
+        if method == "timeline.itemUpsert"
+        and isinstance(params.get("item"), dict)
+        and (params["item"].get("content") or {}).get("kind") == "compact"
+    ]
+    assert len(compact_items) == 1, "expected exactly one compact separator on the live stream"
+    content = compact_items[0]["content"]
+    assert content["trigger"] == "auto"
+    assert content["preTokens"] == 180000
+    assert content["postTokens"] == 42000
 
 
 @pytest.mark.anyio

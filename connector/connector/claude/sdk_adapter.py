@@ -737,6 +737,8 @@ class ClaudeSdkAdapter:
                         emitted_live_content = await self._emit_hook_event(runtime, turn_id, buffered) or emitted_live_content
                     elif _is_init_message(buffered):
                         await self._capture_session_meta(runtime, buffered)
+                    elif _is_compact_boundary_message(buffered):
+                        emitted_live_content = await self._emit_compact_boundary(runtime, turn_id, buffered) or emitted_live_content
                     else:
                         emitted_live_content = await self._emit_sdk_message(runtime, turn_id, buffered) or emitted_live_content
                 if not emitted_live_content:
@@ -788,6 +790,17 @@ class ClaudeSdkAdapter:
                 # no timeline content, so it doesn't count as emitted_live_content.
                 await self._capture_session_meta(runtime, message)
                 continue
+            if _is_compact_boundary_message(message):
+                # Context-compaction marker. It has no content blocks, so
+                # _emit_sdk_message would drop it; intercept and route through the
+                # shared normalizer so the live timeline shows the same "context
+                # compacted" separator as the replay path.
+                if runtime.external_session_id is None:
+                    buffered_messages.append(message)
+                    continue
+                await self._emit_pending_user_message(runtime, turn_id)
+                emitted_live_content = await self._emit_compact_boundary(runtime, turn_id, message) or emitted_live_content
+                continue
             if runtime.external_session_id is None:
                 buffered_messages.append(message)
                 continue
@@ -807,6 +820,8 @@ class ClaudeSdkAdapter:
                     await self._emit_hook_event(runtime, turn_id, buffered)
                 elif _is_init_message(buffered):
                     await self._capture_session_meta(runtime, buffered)
+                elif _is_compact_boundary_message(buffered):
+                    await self._emit_compact_boundary(runtime, turn_id, buffered)
                 else:
                     await self._emit_sdk_message(runtime, turn_id, buffered)
             await self._finalize_live_stream_items(runtime, turn_id, status=status)
@@ -841,6 +856,17 @@ class ClaudeSdkAdapter:
         raw = _stream_event_to_raw(runtime, turn_id, message)
         if raw is not None:
             return await self._emit_normalized(runtime.session_id, turn_id, raw, streaming=True)
+        return False
+
+    async def _emit_compact_boundary(self, runtime: _SdkSessionRuntime, turn_id: str, message: Any) -> bool:
+        # Route the compaction marker through the shared normalizer/reducer so it
+        # renders the same "context compacted" separator as the replay path. Both
+        # clients already render content.kind == "compact"; no client change is
+        # needed. Keyed on the compact record's uuid so the live and replay items
+        # converge (no duplicate divider when history is re-fetched).
+        raw = _compact_boundary_to_raw(message, runtime.external_session_id)
+        if raw is not None:
+            return await self._emit_normalized(runtime.session_id, turn_id, raw)
         return False
 
     async def _emit_result_message(self, runtime: _SdkSessionRuntime, turn_id: str, message: Any) -> bool:
@@ -2162,6 +2188,60 @@ def _session_meta_from_message(message: Any) -> dict[str, Any] | None:
         if commands:
             meta["slashCommands"] = commands
     return meta or None
+
+
+def _is_compact_boundary_message(message: Any) -> bool:
+    # The SDK hands the CLI's context-compaction marker as a plain
+    # SystemMessage(subtype="compact_boundary"). It carries no content blocks, so
+    # _sdk_message_to_raw drops it — the live timeline silently loses the marker
+    # while the transcript-replay path (which the shared normalizer already
+    # handles) shows it. Intercept it before that drop and emit the same
+    # separator the replay path produces.
+    subtype = _optional_string(_extract_attr(message, "subtype"))
+    return subtype == "compact_boundary"
+
+
+def _compact_boundary_to_raw(
+    message: Any,
+    fallback_session_id: str | None,
+) -> dict[str, Any] | None:
+    # Build the raw envelope the shared ClaudeLiveNormalizer recognizes as a
+    # compaction boundary (subtype + compactMetadata), so the live path converges
+    # on the exact same compact timeline item id as the replay path. Returns None
+    # when there is no usable event id to key the separator on.
+    data = _extract_attr(message, "data")
+    data = data if isinstance(data, dict) else {}
+    compact_metadata = data.get("compactMetadata")
+    if not isinstance(compact_metadata, dict):
+        compact_metadata = data.get("compact_metadata")
+    source_event_id = _optional_string(_extract_attr(message, "uuid")) or _optional_string(
+        data.get("uuid")
+    )
+    if source_event_id is None:
+        # Without a stable id the live and replay separators can't converge and
+        # repeat compactions would collapse onto one item; skip rather than risk
+        # a duplicated or vanishing divider.
+        logger.warning(
+            "dropping Claude compact_boundary without uuid session_id={}",
+            _optional_string(_extract_attr(message, "session_id", "sessionId"))
+            or fallback_session_id,
+        )
+        return None
+    session_id = (
+        _optional_string(_extract_attr(message, "session_id", "sessionId"))
+        or _optional_string(data.get("session_id") or data.get("sessionId"))
+        or fallback_session_id
+        or "unknown"
+    )
+    return {
+        "uuid": source_event_id,
+        "session_id": session_id,
+        "subtype": "compact_boundary",
+        "compactMetadata": compact_metadata if isinstance(compact_metadata, dict) else {},
+        "timestamp": _optional_string(_extract_attr(message, "timestamp"))
+        or _optional_string(data.get("timestamp"))
+        or utc_now(),
+    }
 
 
 def _is_rate_limit_message(message: Any) -> bool:
