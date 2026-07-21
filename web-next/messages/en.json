@@ -686,7 +686,12 @@
       "rateLimited": "Rate limited",
       "rateLimitResets": "Resets {time}",
       "rateLimitUtilization": "{percentage}% used",
-      "planMode": "Plan mode"
+      "planMode": "Plan mode",
+      "sessionMetaModel": "Model",
+      "sessionMetaMcpServers": "MCP servers",
+      "sessionMetaSlashCommands": "Slash commands",
+      "sessionMetaMcpCount": "{count} MCP",
+      "sessionMetaSlashCount": "{count} skills"
     },
     "sessionStatus": {
       "error": "Error",

@@ -84,6 +84,18 @@ export type SessionView = {
   // "allowed" means no warning to show; "allowed_warning"/"rejected" surface a
   // quota banner with the reset time. Null until the first event reports it.
   rateLimit?: RateLimit | null;
+  // Runtime snapshot harvested once from the SDK init message (Claude only):
+  // model name, MCP server names, and slash commands. Read-only badge material.
+  // Null until an init-reporting runtime starts.
+  sessionMeta?: SessionMeta | null;
+};
+
+// Runtime snapshot from the SDK init message (Claude only). All fields optional
+// since the connector only includes what the init payload actually carried.
+export type SessionMeta = {
+  model?: string;
+  mcpServers?: string[];
+  slashCommands?: string[];
 };
 
 export type ContextUsage = {

@@ -686,7 +686,12 @@
       "rateLimited": "已被限流",
       "rateLimitResets": "{time} 重置",
       "rateLimitUtilization": "已用 {percentage}%",
-      "planMode": "规划模式"
+      "planMode": "规划模式",
+      "sessionMetaModel": "模型",
+      "sessionMetaMcpServers": "MCP 服务",
+      "sessionMetaSlashCommands": "斜杠命令",
+      "sessionMetaMcpCount": "{count} 个 MCP",
+      "sessionMetaSlashCount": "{count} 个技能"
     },
     "sessionStatus": {
       "error": "错误",

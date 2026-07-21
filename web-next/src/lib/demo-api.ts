@@ -91,6 +91,13 @@ export type SessionView = {
     overageStatus?: string
     overageResetsAt?: number
   } | null
+  // Runtime snapshot harvested once from the SDK init message (Claude): model
+  // name, MCP server names, slash commands. Read-only badge material.
+  sessionMeta?: {
+    model?: string
+    mcpServers?: string[]
+    slashCommands?: string[]
+  } | null
   externalSessionId?: string | null
   tag?: string | null
   updatedAt: string // UI convenience field (not in backend)

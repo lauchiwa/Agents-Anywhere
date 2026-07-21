@@ -198,6 +198,7 @@ export function SessionViewHeader({
           <ContextUsageBadge session={session} />
           <RateLimitBadge session={session} />
           <PlanModeBadge session={session} />
+          <SessionMetaInfoBadge session={session} />
           <div className="ml-auto flex items-center gap-1">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -603,6 +604,77 @@ function PlanModeBadge({ session }: { session: SessionViewModel }) {
     <Badge variant="secondary" className="shrink-0 cursor-default font-normal">
       {t("planMode")}
     </Badge>
+  )
+}
+
+type SessionMetaSnapshot = {
+  model?: string
+  mcpServers?: string[]
+  slashCommands?: string[]
+}
+
+// Read-only runtime snapshot harvested once from the SDK init message (Claude):
+// the active model plus MCP-server and slash-command counts. The model name is
+// the badge label; MCP/skill lists expand in the hover card. Hidden until the
+// connector reports sessionMeta (never for runtimes that don't emit init).
+function SessionMetaInfoBadge({ session }: { session: SessionViewModel }) {
+  const t = useTranslations("dashboard.session")
+  const meta = session.sessionMeta as SessionMetaSnapshot | null | undefined
+  if (!meta) return null
+  const model = typeof meta.model === "string" && meta.model ? meta.model : null
+  const mcpServers = Array.isArray(meta.mcpServers) ? meta.mcpServers.filter((s) => typeof s === "string" && s) : []
+  const slashCommands = Array.isArray(meta.slashCommands) ? meta.slashCommands.filter((s) => typeof s === "string" && s) : []
+  // Nothing worth a badge if the init payload carried none of the three.
+  if (!model && mcpServers.length === 0 && slashCommands.length === 0) return null
+  const label = model ?? (mcpServers.length > 0
+    ? t("sessionMetaMcpCount", { count: mcpServers.length })
+    : t("sessionMetaSlashCount", { count: slashCommands.length }))
+
+  return (
+    <HoverCard openDelay={120} closeDelay={80}>
+      <HoverCardTrigger asChild>
+        <Badge variant="secondary" className="shrink-0 cursor-default gap-1.5 font-normal">
+          {label}
+          {mcpServers.length > 0 ? (
+            <span className="text-muted-foreground">· {t("sessionMetaMcpCount", { count: mcpServers.length })}</span>
+          ) : null}
+        </Badge>
+      </HoverCardTrigger>
+      <HoverCardContent align="end" sideOffset={10} className="w-72 rounded-xl p-3 text-sm">
+        <div className="space-y-3">
+          {model ? (
+            <div className="grid grid-cols-[80px_minmax(0,1fr)] gap-x-3">
+              <div className="text-muted-foreground">{t("sessionMetaModel")}</div>
+              <div className="code-mono min-w-0 break-all font-medium text-popover-foreground">{model}</div>
+            </div>
+          ) : null}
+          {mcpServers.length > 0 ? (
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                {t("sessionMetaMcpServers")}
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {mcpServers.map((name) => (
+                  <Badge key={name} variant="outline" className="font-normal">{name}</Badge>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {slashCommands.length > 0 ? (
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                {t("sessionMetaSlashCommands")}
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {slashCommands.map((cmd) => (
+                  <Badge key={cmd} variant="outline" className="code-mono font-normal">{cmd}</Badge>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </HoverCardContent>
+    </HoverCard>
   )
 }
 
