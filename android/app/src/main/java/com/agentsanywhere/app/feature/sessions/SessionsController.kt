@@ -9,6 +9,7 @@ import com.agentsanywhere.app.api.RemoteDevice
 import com.agentsanywhere.app.api.RemoteSession
 import com.agentsanywhere.app.api.toContextUsage
 import com.agentsanywhere.app.api.toRateLimit
+import com.agentsanywhere.app.api.toSessionMeta
 import com.agentsanywhere.app.feature.auth.AuthSessionStore
 import com.agentsanywhere.app.feature.devices.toAgentDevice
 import com.agentsanywhere.app.model.AgentDevice
@@ -407,6 +408,7 @@ class SessionsController(
             sortKey = sortAt ?: lastActivityAt ?: lastItemAt ?: "",
             contextUsage = contextUsage?.toContextUsage(),
             rateLimit = rateLimit?.toRateLimit(),
+            sessionMeta = sessionMeta?.toSessionMeta(),
             externalSessionId = externalSessionId,
             tag = tag,
         )

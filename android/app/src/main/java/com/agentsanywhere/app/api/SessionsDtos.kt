@@ -2,6 +2,7 @@ package com.agentsanywhere.app.api
 
 import com.agentsanywhere.app.model.ContextUsage
 import com.agentsanywhere.app.model.RateLimit
+import com.agentsanywhere.app.model.SessionMeta
 import org.json.JSONObject
 
 
@@ -28,6 +29,7 @@ data class RemoteSession(
     val runtimeSettingsOverride: Map<String, Any?>,
     val contextUsage: RemoteContextUsage? = null,
     val rateLimit: RemoteRateLimit? = null,
+    val sessionMeta: RemoteSessionMeta? = null,
     val tag: String? = null,
 )
 
@@ -46,6 +48,12 @@ data class RemoteRateLimit(
     val utilization: Double? = null,
     val overageStatus: String? = null,
     val overageResetsAt: Long? = null,
+)
+
+data class RemoteSessionMeta(
+    val model: String? = null,
+    val mcpServers: List<String> = emptyList(),
+    val slashCommands: List<String> = emptyList(),
 )
 
 data class RemoteRuntimeConfigSchema(
@@ -183,5 +191,13 @@ internal fun RemoteRateLimit.toRateLimit(): RateLimit {
         utilization = utilization,
         overageStatus = overageStatus,
         overageResetsAt = overageResetsAt,
+    )
+}
+
+internal fun RemoteSessionMeta.toSessionMeta(): SessionMeta {
+    return SessionMeta(
+        model = model,
+        mcpServers = mcpServers,
+        slashCommands = slashCommands,
     )
 }

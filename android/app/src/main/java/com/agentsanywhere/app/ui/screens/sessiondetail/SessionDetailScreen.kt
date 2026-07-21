@@ -923,6 +923,7 @@ fun SessionDetailScreen(
                             modifier = Modifier.align(Alignment.TopCenter),
                             contextUsage = state.session?.contextUsage,
                             rateLimit = state.session?.rateLimit,
+                            sessionMeta = state.session?.sessionMeta,
                             onMenuClick = if (onForkSession != null || onDeleteSession != null || onTagSession != null || onTogglePinSession != null || onToggleArchiveSession != null) {
                                 { showSessionMenu = true }
                             } else null,

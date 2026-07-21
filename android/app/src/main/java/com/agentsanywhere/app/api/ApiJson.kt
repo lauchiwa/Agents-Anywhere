@@ -71,6 +71,14 @@ internal fun JSONObject.toRemoteRateLimit(): RemoteRateLimit {
     )
 }
 
+internal fun JSONObject.toRemoteSessionMeta(): RemoteSessionMeta {
+    return RemoteSessionMeta(
+        model = optNullableString("model"),
+        mcpServers = optJSONArray("mcpServers").toStringList(),
+        slashCommands = optJSONArray("slashCommands").toStringList(),
+    )
+}
+
 internal fun String.urlEncode(): String {
     return java.net.URLEncoder.encode(this, Charsets.UTF_8.name()).replace("+", "%20")
 }

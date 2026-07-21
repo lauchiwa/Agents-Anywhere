@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import com.agentsanywhere.app.R
 import com.agentsanywhere.app.model.ContextUsage
 import com.agentsanywhere.app.model.RateLimit
+import com.agentsanywhere.app.model.SessionMeta
 import com.agentsanywhere.app.ui.designsystem.noRippleClickable
 import com.composables.icons.lucide.Ellipsis
 import com.composables.icons.lucide.Lucide
@@ -47,6 +48,7 @@ internal fun SessionDetailHeader(
     modifier: Modifier = Modifier,
     contextUsage: ContextUsage? = null,
     rateLimit: RateLimit? = null,
+    sessionMeta: SessionMeta? = null,
     onMenuClick: (() -> Unit)? = null,
 ) {
     val surface = if (darkMode) Color(0xF218181B) else Color(0xF2FFFFFF)
@@ -107,6 +109,20 @@ internal fun SessionDetailHeader(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                val modelName = sessionMeta?.model?.takeIf { it.isNotBlank() }
+                if (modelName != null) {
+                    // Static session identity harvested from the SDK init message.
+                    // Muted so the dynamic gauge/rate lines below still stand out.
+                    Text(
+                        text = modelName,
+                        color = if (darkMode) Color(0xFF8A8A8F) else Color(0xFF8C8B85),
+                        fontSize = 11.sp,
+                        lineHeight = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 if (gaugePercent != null) {
                     val gaugeColor = if (nearCompact) {
                         Color(0xFFDC6A5B)

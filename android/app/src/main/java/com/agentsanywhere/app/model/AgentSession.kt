@@ -30,6 +30,11 @@ data class AgentSession(
     // first event; status "allowed" means no warning, "allowed_warning"/
     // "rejected" surface a quota banner with the reset time.
     val rateLimit: RateLimit? = null,
+    // Runtime snapshot harvested once from the SDK init message (Claude): the
+    // active model, MCP server names, and slash commands the CLI reported at
+    // startup. Null until the connector reports it (never for runtimes that
+    // don't emit init).
+    val sessionMeta: SessionMeta? = null,
     val externalSessionId: String? = null,
     val tag: String? = null,
 )
@@ -53,6 +58,15 @@ data class RateLimit(
     val utilization: Double? = null,
     val overageStatus: String? = null,
     val overageResetsAt: Long? = null,
+)
+
+// Runtime snapshot from the SDK init message (Claude): the model the session is
+// running plus MCP server names and slash commands reported at startup. All
+// optional since the connector only includes what the init payload carried.
+data class SessionMeta(
+    val model: String? = null,
+    val mcpServers: List<String> = emptyList(),
+    val slashCommands: List<String> = emptyList(),
 )
 
 enum class SessionStatus {

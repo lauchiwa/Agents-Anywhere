@@ -379,6 +379,7 @@ class SessionsApi(
             runtimeSettings = optJSONObject("runtimeSettings").toMap(),
             runtimeSettingsOverride = optJSONObject("runtimeSettingsOverride").toMap(),
             contextUsage = optJSONObject("contextUsage")?.toRemoteContextUsage(),
+            sessionMeta = optJSONObject("sessionMeta")?.toRemoteSessionMeta(),
             tag = optNullableString("tag"),
         )
     }

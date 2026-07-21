@@ -10,6 +10,7 @@ import com.agentsanywhere.app.api.RemoteRuntimeSettings
 import com.agentsanywhere.app.api.RemoteSession
 import com.agentsanywhere.app.api.toContextUsage
 import com.agentsanywhere.app.api.toRateLimit
+import com.agentsanywhere.app.api.toSessionMeta
 import com.agentsanywhere.app.api.toStringList
 import com.agentsanywhere.app.api.RemoteSessionEvent
 import com.agentsanywhere.app.api.RemoteTimelineItem
@@ -1006,6 +1007,7 @@ class SessionDetailController(
             sortKey = sortAt ?: lastActivityAt ?: lastItemAt ?: "",
             contextUsage = contextUsage?.toContextUsage(),
             rateLimit = rateLimit?.toRateLimit(),
+            sessionMeta = sessionMeta?.toSessionMeta(),
         )
     }
 
