@@ -188,6 +188,57 @@ async def connector_attachment_content(
     )
 
 
+# Upper bound on a single connector-uploaded tool attachment. Mirrors the
+# user-upload limit (sessions_fs.MAX_UPLOAD_FILE_BYTES = 25 MiB) so a runaway
+# tool_result can't buffer an unbounded blob into memory here.
+MAX_CONNECTOR_ATTACHMENT_BYTES = 25 * 1024 * 1024
+
+
+@router.post("/connector/sessions/{session_id}/attachments")
+async def connector_attachment_upload(
+    session_id: str,
+    request: Request,
+    authorization: str = Header(..., alias="Authorization"),
+    x_file_name: str | None = Header(None, alias="X-File-Name"),
+    x_media_type: str | None = Header(None, alias="X-Media-Type"),
+    db: Store = Depends(get_store),
+    attachments: AttachmentService = Depends(get_attachment_service),
+) -> dict[str, Any]:
+    """Connector-side blob upload for bytes a tool returned (e.g. an image inside
+    a tool_result). The connector externalizes the bytes here so the timeline
+    carries a fileId reference instead of inline base64. The raw body is the file
+    bytes; X-File-Name / X-Media-Type carry metadata. Returns the stored
+    attachment metadata ({fileId,name,mediaType,size,sha256})."""
+    connector_id = _connector_id_from_bearer(authorization)
+    await _require_active_connector(connector_id, db)
+    await db.record_connector_activity(connector_id)
+    data = await request.body()
+    if not data:
+        raise HTTPException(status_code=422, detail="empty upload body")
+    if len(data) > MAX_CONNECTOR_ATTACHMENT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"upload exceeds {MAX_CONNECTOR_ATTACHMENT_BYTES} bytes",
+        )
+    try:
+        metadata = await attachments.save_connector_upload(
+            session_id=session_id,
+            connector_id=connector_id,
+            name=x_file_name or "tool-attachment",
+            data=data,
+            media_type=x_media_type,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="session not found") from None
+    return {
+        "fileId": metadata["fileId"],
+        "name": metadata["name"],
+        "mediaType": metadata.get("mediaType") or "",
+        "size": metadata["size"],
+        "sha256": metadata["sha256"],
+    }
+
+
 @router.put("/connector/fs/transfers/{transfer_id}")
 async def connector_fs_transfer_upload(
     transfer_id: str,

@@ -5808,6 +5808,78 @@ def test_client_uploads_attachment_and_connector_downloads_by_session(tmp_path):
     assert still_available.status_code == 200
 
 
+def test_connector_uploads_tool_attachment_and_user_downloads(tmp_path):
+    # A tool returned bytes (e.g. an image inside a tool_result); the connector
+    # externalizes them via the connector-auth upload route so the timeline can
+    # carry a fileId reference instead of inline base64. The stored blob must be
+    # downloadable/renderable by the user through the same attachment routes as a
+    # user upload, and re-fetchable by the connector.
+    client = make_client(tmp_path)
+    connector_id, connector_access_token, session_id, headers = create_connector_and_session(client)
+    data = b"\x89PNG\r\n\x1a\n fake image bytes \x00\xff"
+
+    upload_response = client.post(
+        f"/connector/sessions/{session_id}/attachments",
+        headers={
+            "Authorization": f"Bearer {connector_access_token}",
+            "X-File-Name": "aa-screen.png",
+            "X-Media-Type": "image/png",
+        },
+        content=data,
+    )
+
+    assert upload_response.status_code == 200, upload_response.text
+    body = upload_response.json()
+    assert body["name"] == "aa-screen.png"
+    assert body["mediaType"] == "image/png"
+    assert body["size"] == len(data)
+    assert body["sha256"] == hashlib.sha256(data).hexdigest()
+    assert body["fileId"].startswith("file_")
+
+    # The user can download the connector-uploaded blob through the normal route.
+    download = client.get(f"/sessions/{session_id}/attachments/{body['fileId']}", headers=headers)
+    assert download.status_code == 200
+    assert base64.b64decode(download.json()["contentBase64"]) == data
+
+    # And it renders via /open like any other attachment.
+    open_response = client.get(
+        f"/sessions/{session_id}/attachments/{body['fileId']}/open",
+        headers=headers,
+        follow_redirects=False,
+    )
+    assert open_response.status_code == 302
+
+    # An empty body is rejected rather than stored as a zero-byte blob.
+    empty = client.post(
+        f"/connector/sessions/{session_id}/attachments",
+        headers={"Authorization": f"Bearer {connector_access_token}"},
+        content=b"",
+    )
+    assert empty.status_code == 422
+
+
+def test_connector_upload_rejects_foreign_session(tmp_path):
+    # The upload route must enforce session ownership: a connector cannot stash a
+    # blob into a session it doesn't own (mirrors read_connector_attachment auth).
+    client = make_client(tmp_path)
+    _, _, session_id, _ = create_connector_and_session(client)
+    # A second, unrelated connector.
+    other = client.post("/connectors", headers=auth_headers(client), json={"name": "other"})
+    other_id = other.json()["connector"]["id"]
+    other_token = other.json()["connectorToken"]
+    other_access = client.post(
+        "/connector/auth",
+        headers={"Authorization": f"Connector {other_id}:{other_token}"},
+    ).json()["accessToken"]
+
+    resp = client.post(
+        f"/connector/sessions/{session_id}/attachments",
+        headers={"Authorization": f"Bearer {other_access}", "X-File-Name": "x.png"},
+        content=b"not mine",
+    )
+    assert resp.status_code == 404
+
+
 async def _exercise_rpc_manager():
     manager = ConnectorRpcManager()
     websocket = FakeWebSocket()

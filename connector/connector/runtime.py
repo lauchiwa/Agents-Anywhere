@@ -174,6 +174,21 @@ class BackendRpcClient:
                     ad.attachment_downloader = self.download_attachment
                 except AttributeError:
                     pass
+            # Wire the tool-attachment uploader (externalizes tool_result image
+            # bytes to a fileId). Same defensive pattern as the downloader above.
+            if getattr(ad, "attachment_uploader", None) is None:
+                try:
+                    ad.attachment_uploader = self.upload_tool_attachment
+                except AttributeError:
+                    pass
+            # The Claude history adapter runs the same externalizer on the
+            # transcript-replay path, so give it the uploader too.
+            history_adapter = getattr(ad, "history_adapter", None)
+            if history_adapter is not None and getattr(history_adapter, "attachment_uploader", None) is None:
+                try:
+                    history_adapter.attachment_uploader = self.upload_tool_attachment
+                except AttributeError:
+                    pass
         # Back-compat alias so callers / tests that still reach for
         # `client.adapter` get the default-routed adapter.
         self.adapter = self.adapters[DEFAULT_RUNTIME]
@@ -857,6 +872,51 @@ class BackendRpcClient:
                 media_type,
             )
             return response.content, name, media_type
+
+    async def upload_tool_attachment(
+        self,
+        session_id: str,
+        data: bytes,
+        name: str,
+        media_type: str,
+    ) -> dict[str, Any]:
+        """Externalize bytes a tool returned (e.g. an image inside a tool_result)
+        to the backend, returning the stored attachment metadata
+        ({fileId,name,mediaType,size,sha256}). The connector rides a fileId
+        reference on the timeline instead of inline base64, so a multi-hundred-KB
+        image never bloats the SSE payload. Mirrors download_attachment's auth /
+        401-retry contract.
+        """
+        access_token = await self.ensure_access_token()
+        timeout = httpx.Timeout(300.0, connect=30.0)
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "X-File-Name": name,
+            "X-Media-Type": media_type or "application/octet-stream",
+            "Content-Type": "application/octet-stream",
+        }
+        url = urljoin(
+            self.config.server_url + "/",
+            f"connector/sessions/{session_id}/attachments",
+        )
+        async with self._new_http_client(timeout=timeout) as client:
+            response = await client.post(url, headers=headers, content=data)
+            if getattr(response, "status_code", None) == 401:
+                access_token = await self.ensure_access_token(force=True)
+                headers["Authorization"] = f"Bearer {access_token}"
+                response = await client.post(url, headers=headers, content=data)
+                if getattr(response, "status_code", None) == 401:
+                    raise ConnectorAuthenticationError("connector credential no longer valid")
+            response.raise_for_status()
+            metadata = response.json()
+            logger.info(
+                "uploaded tool attachment session_id={} file_id={} size={} mediaType={}",
+                session_id,
+                metadata.get("fileId"),
+                metadata.get("size"),
+                metadata.get("mediaType"),
+            )
+            return metadata
 
     async def upload_prepared_download(self, params: dict[str, Any]) -> dict[str, Any]:
         transfer_id = params.get("transferId")

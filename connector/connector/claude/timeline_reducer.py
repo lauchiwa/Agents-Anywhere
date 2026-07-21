@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from connector.claude.normalized import NormalizedClaudeEvent
 from connector.claude.timeline_identity import ClaudeTimelineIdentity, content_hash
+from connector.logging import logger
+
+
+# (session_id, data, name, media_type) -> stored metadata {fileId,name,mediaType,size,sha256}.
+AttachmentUploader = Callable[[str, bytes, str, str], Awaitable[dict[str, Any]]]
 
 
 class ClaudeTimelineReducer:
@@ -364,19 +372,68 @@ def _tool_call_content(event: NormalizedClaudeEvent) -> dict[str, Any]:
 
 
 def _tool_result_content(event: NormalizedClaudeEvent) -> dict[str, Any]:
-    text = _result_text(event.toolResult)
+    # Split any inline image sub-blocks out of the tool_result before building
+    # the timeline content. A single screenshot is ~500KB of base64; left in
+    # `result` (and re-serialized into `outputText` by _result_text) it would
+    # bloat the timeline item to >1MB and get pushed on every full SSE frame.
+    # The stripped result keeps only the non-image blocks; the images ride in
+    # `pendingImages` (a connector-internal staging field) until the async
+    # externalizer uploads them and rewrites them into `attachments` refs.
+    stripped_result, pending_images = _split_tool_result_images(event.toolResult)
+    text = _result_text(stripped_result)
     content: dict[str, Any] = {
         "toolUseId": event.toolUseId,
-        "result": event.toolResult,
+        "result": stripped_result,
         "text": text,
         "outputText": text,
         "outputPreview": _preview_text(text),
         "outputLength": len(text),
     }
+    if pending_images:
+        content["pendingImages"] = pending_images
     if event.toolResultIsError:
         content["isError"] = True
         content["error"] = text
     return content
+
+
+def _split_tool_result_images(result: Any) -> tuple[Any, list[dict[str, Any]]]:
+    """Separate inline image sub-blocks from a tool_result's content.
+
+    Returns (stripped_result, pending_images). `stripped_result` is `result`
+    with every `{"type":"image",...}` block removed (other blocks preserved,
+    order intact); `pending_images` is the list of extracted image blocks in the
+    shape {"mediaType","data"} (base64 string). When `result` carries no image
+    blocks the original object is returned unchanged with an empty list, so
+    non-image tool results are untouched.
+    """
+    if not isinstance(result, list):
+        return result, []
+    pending: list[dict[str, Any]] = []
+    kept: list[Any] = []
+    for block in result:
+        if isinstance(block, dict) and block.get("type") == "image":
+            source = block.get("source")
+            if isinstance(source, dict) and source.get("type") == "base64":
+                data = source.get("data")
+                media_type = source.get("media_type") or source.get("mediaType")
+                if isinstance(data, str) and data:
+                    pending.append(
+                        {
+                            "mediaType": media_type if isinstance(media_type, str) else "",
+                            "data": data,
+                        }
+                    )
+                    continue
+            # An image block we can't externalize (missing/unknown source):
+            # drop the raw bytes rather than leak them into the timeline, but
+            # leave a lightweight marker so the block isn't silently lost.
+            kept.append({"type": "image", "unresolved": True})
+            continue
+        kept.append(block)
+    if not pending:
+        return result, []
+    return kept, pending
 
 
 def _tool_common(event: NormalizedClaudeEvent) -> dict[str, Any]:
@@ -528,3 +585,96 @@ def _int(value: Any) -> int | None:
 
 def _strip_empty(value: dict[str, Any]) -> dict[str, Any]:
     return {key: item for key, item in value.items() if item is not None}
+
+
+async def externalize_tool_result_images(
+    items: list[dict[str, Any]],
+    *,
+    session_id: str,
+    uploader: AttachmentUploader | None,
+) -> None:
+    """Upload the inline images staged on tool items and rewrite them as refs.
+
+    Reducer output stages extracted tool_result images in `content.pendingImages`
+    (base64) so the reduce pass stays synchronous. This async pass — called from
+    both the live emit path and the transcript sync path — decodes each staged
+    image, uploads the bytes via `uploader`, and replaces `pendingImages` with an
+    `attachments` list of {fileId,name,mediaType,size,sha256} refs. Items are
+    mutated in place; contentHash is recomputed so it reflects the rewritten
+    content. On any failure (no uploader wired, decode error, upload error) the
+    staged bytes are dropped and a marker attachment records the failure rather
+    than leaking base64 back onto the timeline or crashing the sync.
+    """
+    for item in items:
+        content = item.get("content")
+        if not isinstance(content, dict):
+            continue
+        pending = content.pop("pendingImages", None)
+        if not pending:
+            continue
+        attachments: list[dict[str, Any]] = []
+        for index, image in enumerate(pending):
+            if not isinstance(image, dict):
+                continue
+            media_type = image.get("mediaType") if isinstance(image.get("mediaType"), str) else ""
+            b64 = image.get("data")
+            ref = await _upload_one_image(
+                session_id=session_id,
+                uploader=uploader,
+                media_type=media_type,
+                b64=b64 if isinstance(b64, str) else None,
+                index=index,
+            )
+            if ref is not None:
+                attachments.append(ref)
+        if attachments:
+            existing = content.get("attachments")
+            if isinstance(existing, list):
+                content["attachments"] = [*existing, *attachments]
+            else:
+                content["attachments"] = attachments
+        item["contentHash"] = content_hash(content)
+
+
+async def _upload_one_image(
+    *,
+    session_id: str,
+    uploader: AttachmentUploader | None,
+    media_type: str,
+    b64: str | None,
+    index: int,
+) -> dict[str, Any] | None:
+    if uploader is None:
+        logger.warning("tool_result image dropped — no attachment uploader wired session_id={}", session_id)
+        return {"unresolved": True, "mediaType": media_type}
+    if not b64:
+        return {"unresolved": True, "mediaType": media_type}
+    try:
+        data = base64.b64decode(b64, validate=True)
+    except (binascii.Error, ValueError):
+        logger.warning("tool_result image dropped — base64 decode failed session_id={}", session_id)
+        return {"unresolved": True, "mediaType": media_type}
+    name = _image_name(media_type, index)
+    try:
+        metadata = await uploader(session_id, data, name, media_type or "application/octet-stream")
+    except Exception:
+        logger.exception("tool_result image upload failed session_id={}", session_id)
+        return {"unresolved": True, "mediaType": media_type}
+    file_id = metadata.get("fileId") if isinstance(metadata, dict) else None
+    if not isinstance(file_id, str) or not file_id:
+        return {"unresolved": True, "mediaType": media_type}
+    ref: dict[str, Any] = {"fileId": file_id}
+    for key in ("name", "mediaType", "size", "sha256"):
+        value = metadata.get(key)
+        if value is not None:
+            ref[key] = value
+    ref.setdefault("mediaType", media_type)
+    return ref
+
+
+def _image_name(media_type: str, index: int) -> str:
+    ext = ""
+    if isinstance(media_type, str) and "/" in media_type:
+        ext = media_type.split("/", 1)[1].split("+", 1)[0]
+    ext = ext or "img"
+    return f"tool-image-{index + 1}.{ext}"

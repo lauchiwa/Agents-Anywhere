@@ -126,6 +126,30 @@ class AttachmentService:
         self._validate_blob_integrity(data, metadata)
         return data, metadata
 
+    async def save_connector_upload(
+        self,
+        *,
+        session_id: str,
+        connector_id: str,
+        name: str,
+        data: bytes,
+        media_type: str | None = None,
+    ) -> dict[str, Any]:
+        # Connector-side blob upload: the connector externalizes bytes that a
+        # tool returned (e.g. an image inside a tool_result) so they ride the
+        # timeline as a fileId reference instead of inline base64. Auth mirrors
+        # read_connector_attachment (session must belong to this connector); the
+        # blob is stored exactly like a user upload but tagged origin="tool".
+        if not await self._store.session_owned_by_connector(session_id, connector_id):
+            raise KeyError(session_id)
+        return await self._persist_file_blob(
+            session_id=session_id,
+            data=data,
+            name=name,
+            media_type=media_type,
+            origin="tool",
+        )
+
     async def delete_file(self, *, session_id: str, file_id: str) -> None:
         self._validate_file_id(file_id)
         await self._files.delete(session_id, file_id)

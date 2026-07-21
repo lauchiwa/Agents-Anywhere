@@ -19,13 +19,22 @@ from connector.claude.mcp_config import load_servers as load_mcp_servers
 from connector.claude.normalized import NormalizedClaudeEvent
 from connector.claude.normalizers import ClaudeLiveNormalizer
 from connector.claude.timeline_identity import ClaudeTimelineIdentity
-from connector.claude.timeline_reducer import ClaudeTimelineReducer, is_task_event_tool_name
+from connector.claude.timeline_reducer import (
+    ClaudeTimelineReducer,
+    externalize_tool_result_images,
+    is_task_event_tool_name,
+)
 from connector.launch import LaunchTarget, launch_target
 from connector.time import utc_now
 
 
 AttachmentDownloader = Callable[[str, str], Awaitable[tuple[bytes, str, str]]]
 """(session_id, file_id) -> (data, original_name, media_type)"""
+
+AttachmentUploader = Callable[[str, bytes, str, str], Awaitable[dict[str, Any]]]
+"""(session_id, data, name, media_type) -> stored metadata
+{fileId,name,mediaType,size,sha256}. Externalizes bytes a tool returned so the
+timeline carries a fileId reference instead of inline base64."""
 
 McpConfigProvider = Callable[[], dict[str, dict[str, Any]]]
 """Returns `{server_name: McpServerConfig}` dict for the SDK's `mcp_servers`.
@@ -137,6 +146,10 @@ class ClaudeSdkAdapter:
     sdk_module: Any | None = None
     history_adapter: ClaudeHistoryAdapter = field(default_factory=ClaudeHistoryAdapter)
     attachment_downloader: AttachmentDownloader | None = None
+    # Externalizes bytes a tool returned (e.g. an image inside a tool_result) to
+    # the backend, returning a fileId reference. Wired by the runtime (see
+    # runtime.py); None-safe so adapters/tests without it degrade to text.
+    attachment_uploader: AttachmentUploader | None = None
     claude_target: LaunchTarget | None = None
     # Provider hook for MCP server configs. Called per-turn from
     # `_options_kwargs` so hand-edits to `mcp.json` take effect on the next
@@ -976,7 +989,15 @@ class ClaudeSdkAdapter:
         if runtime is not None:
             events = _filter_live_task_events(runtime, events)
         emitted = False
-        for item in reducer.reduce(session_id=session_id, turn_id=turn_id, events=events):
+        reduced = reducer.reduce(session_id=session_id, turn_id=turn_id, events=events)
+        # Upload any inline tool_result images and rewrite them as fileId refs
+        # before emit, so a ~500KB base64 screenshot never rides the SSE frame.
+        await externalize_tool_result_images(
+            reduced,
+            session_id=session_id,
+            uploader=self.attachment_uploader,
+        )
+        for item in reduced:
             dumped = dict(item)
             if runtime is not None:
                 if streaming and (_is_streaming_assistant_message(dumped) or _is_streaming_reasoning_item(dumped)):

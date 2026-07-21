@@ -13,7 +13,7 @@ from connector.logging import logger
 from connector.claude.normalizers import ClaudeTranscriptNormalizer
 from connector.claude.path_utils import stable_claude_session_id
 from connector.claude.timeline_identity import content_hash
-from connector.claude.timeline_reducer import ClaudeTimelineReducer
+from connector.claude.timeline_reducer import ClaudeTimelineReducer, externalize_tool_result_images
 from connector.sync_state import SyncStateStore
 from connector.time import utc_now
 
@@ -45,6 +45,10 @@ class ClaudeHistoryAdapter:
 
     sdk_module: Any | None = None
     sync_state_store: SyncStateStore | None = None
+    # Externalizes inline tool_result images to fileId refs (wired by the
+    # runtime, mirrors the adapter's uploader). None-safe: without it the
+    # transcript path drops staged image bytes rather than inlining base64.
+    attachment_uploader: Any | None = None
     _cursors: dict[str, _HistoryCursor] = field(default_factory=dict)
 
     def forget_sync_state(self) -> None:
@@ -109,6 +113,9 @@ class ClaudeHistoryAdapter:
                 messages=sync_messages,
                 timeline_method="timeline.sync" if previous_cursor is None else "timeline.itemUpsert",
             )
+            await _externalize_history_notifications(
+                thread_notifications, uploader=self.attachment_uploader
+            )
             self._store_cursor(connector_id, external_session_id, cursor)
             if notification_sink is not None:
                 await notification_sink(thread_notifications)
@@ -140,16 +147,18 @@ class ClaudeHistoryAdapter:
         session_info = _get_session_info(sdk, external_session_id, directory=cwd)
         messages = _get_session_messages(sdk, external_session_id, directory=cwd)
         self._cursors[external_session_id] = _cursor_for(session_info, messages)
-        return {
-            "backendNotifications": _backend_notifications_from_sdk_history(
-                session_id=session_id,
-                external_session_id=external_session_id,
-                session_info=session_info,
-                messages=messages,
-                fallback_cwd=cwd,
-                pending_client_messages=pending_client_messages,
-            )
-        }
+        notifications = _backend_notifications_from_sdk_history(
+            session_id=session_id,
+            external_session_id=external_session_id,
+            session_info=session_info,
+            messages=messages,
+            fallback_cwd=cwd,
+            pending_client_messages=pending_client_messages,
+        )
+        await _externalize_history_notifications(
+            notifications, uploader=self.attachment_uploader
+        )
+        return {"backendNotifications": notifications}
 
     async def mark_session_consumed(
         self,
@@ -263,6 +272,43 @@ def _backend_notifications_from_sdk_history(
                 }
             )
     return notifications
+
+
+async def _externalize_history_notifications(
+    notifications: list[dict[str, Any]],
+    *,
+    uploader: Any,
+) -> None:
+    """Run the tool_result image externalizer over history-sync notifications.
+
+    The reduce pass stages inline tool_result images in `content.pendingImages`
+    (base64); this async pass uploads them to fileId refs so the replay path
+    matches the live path and no base64 rides the timeline. Collects the timeline
+    items out of both notification shapes (timeline.sync carries `items`,
+    timeline.itemUpsert carries a single `item`) and externalizes them in place.
+    """
+    items: list[dict[str, Any]] = []
+    session_id: str | None = None
+    for notification in notifications:
+        if not isinstance(notification, dict):
+            continue
+        params = notification.get("params")
+        if not isinstance(params, dict):
+            continue
+        if session_id is None and isinstance(params.get("sessionId"), str):
+            session_id = params["sessionId"]
+        method = notification.get("method")
+        if method == "timeline.sync":
+            batch = params.get("items")
+            if isinstance(batch, list):
+                items.extend(i for i in batch if isinstance(i, dict))
+        elif method == "timeline.itemUpsert":
+            item = params.get("item")
+            if isinstance(item, dict):
+                items.append(item)
+    if not items or session_id is None:
+        return
+    await externalize_tool_result_images(items, session_id=session_id, uploader=uploader)
 
 
 # ---------------------------------------------------------------------------
