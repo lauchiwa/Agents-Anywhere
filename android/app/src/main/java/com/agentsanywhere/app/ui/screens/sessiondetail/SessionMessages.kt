@@ -651,6 +651,7 @@ private fun ToolRunGroup(
     listState: LazyListState,
     childrenByParent: Map<String, List<TimelineMessage>> = emptyMap(),
     onOpenFile: (String) -> Unit = {},
+    onPreviewAttachment: (TimelineAttachment) -> Unit = {},
 ) {
     val primary = if (darkMode) Color(0xFFFAFAFA) else Color(0xFF2B2C29)
     val muted = if (darkMode) Color(0xFFA1A1AA) else Color(0xFF7C7B76)
@@ -744,6 +745,7 @@ private fun ToolRunGroup(
                 embedded = true,
                 children = childrenByParent[message.id].orEmpty(),
                 onOpenFile = onOpenFile,
+                onPreviewAttachment = onPreviewAttachment,
             )
         }
     }
@@ -859,6 +861,7 @@ private fun TimelineMessageRow(
             listState = listState,
             children = childrenByParent[message.id].orEmpty(),
             onOpenFile = onOpenFile,
+            onPreviewAttachment = onPreviewAttachment,
         )
         TimelineMessageKind.Notification -> NotificationCard(message, darkMode, onCopyMessage)
         TimelineMessageKind.System -> ToolPlaceholder(message, darkMode)
@@ -1276,6 +1279,7 @@ private fun ToolActivityCard(
     embedded: Boolean = false,
     children: List<TimelineMessage> = emptyList(),
     onOpenFile: (String) -> Unit = {},
+    onPreviewAttachment: (TimelineAttachment) -> Unit = {},
 ) {
     val surface = if (darkMode) Color(0xFF18181B) else Color(0xFFF1F0ED)
     val border = if (darkMode) Color(0xFF27272A) else Color(0xFFE4E1DB)
@@ -1372,6 +1376,7 @@ private fun ToolActivityCard(
                     ToolActivityDetailCard(
                         message = message,
                         darkMode = darkMode,
+                        onPreviewAttachment = onPreviewAttachment,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
@@ -1406,6 +1411,7 @@ private fun ToolActivityCard(
                     darkMode = darkMode,
                     listState = listState,
                     onOpenFile = onOpenFile,
+                    onPreviewAttachment = onPreviewAttachment,
                 )
             }
         }
@@ -1419,6 +1425,7 @@ private fun SubagentChildren(
     listState: LazyListState,
     onOpenFile: (String) -> Unit,
     onCopyMessage: ((String) -> Unit)? = null,
+    onPreviewAttachment: (TimelineAttachment) -> Unit = {},
 ) {
     val rail = if (darkMode) Color(0xFF3F3F46) else Color(0xFFD8D5CE)
     Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
@@ -1445,6 +1452,7 @@ private fun SubagentChildren(
                         listState = listState,
                         embedded = true,
                         onOpenFile = onOpenFile,
+                        onPreviewAttachment = onPreviewAttachment,
                     )
                     TimelineMessageKind.Notification -> NotificationCard(child, darkMode, onCopyMessage)
                     TimelineMessageKind.System -> ToolPlaceholder(child, darkMode)
@@ -1467,6 +1475,7 @@ private fun ToolActivityDetailCard(
     message: TimelineMessage,
     darkMode: Boolean,
     modifier: Modifier = Modifier,
+    onPreviewAttachment: (TimelineAttachment) -> Unit = {},
 ) {
     val muted = if (darkMode) Color(0xFFA1A1AA) else Color(0xFF7C7B76)
 
@@ -1492,7 +1501,7 @@ private fun ToolActivityDetailCard(
                 DiffPreview(diff = message.body, path = message.detail.ifBlank { message.subtitle }, darkMode = darkMode)
             }
             TimelineMessageKind.ToolCall -> {
-                ToolCallPreview(message = message, darkMode = darkMode)
+                ToolCallPreview(message = message, darkMode = darkMode, onPreviewAttachment = onPreviewAttachment)
             }
             else -> Unit
         }
@@ -1508,16 +1517,40 @@ private fun TimelineMessage.toolSummaryTarget(): String {
 }
 
 @Composable
-private fun ToolCallPreview(message: TimelineMessage, darkMode: Boolean) {
+private fun ToolCallPreview(
+    message: TimelineMessage,
+    darkMode: Boolean,
+    onPreviewAttachment: (TimelineAttachment) -> Unit = {},
+) {
     // When detail is populated it means this is an MCP tool call with structured
     // arguments/result — render with McpToolPreview for clear separation.
+    val imageAttachments = message.attachments.filter { it.isImage }
+    val imageBlock: @Composable () -> Unit = {
+        if (imageAttachments.isNotEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                imageAttachments.forEach { attachment ->
+                    RemoteAttachmentImage(
+                        attachment = attachment,
+                        onClick = { onPreviewAttachment(attachment) },
+                        darkMode = darkMode,
+                    )
+                }
+            }
+        }
+    }
     if (message.detail.isNotBlank()) {
-        McpToolPreview(
-            arguments = message.detail,
-            output = message.body,
-            isError = message.body.startsWith("Error:"),
-            darkMode = darkMode,
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            McpToolPreview(
+                arguments = message.detail,
+                output = message.body,
+                isError = message.body.startsWith("Error:"),
+                darkMode = darkMode,
+            )
+            imageBlock()
+        }
         return
     }
     val details = listOf(
@@ -1525,13 +1558,18 @@ private fun ToolCallPreview(message: TimelineMessage, darkMode: Boolean) {
         message.detail,
         message.body,
     ).filter { it.isNotBlank() }
-    if (details.isEmpty()) return
-    CommandPreviewSection(
-        label = message.title.ifBlank { message.text.ifBlank { "tool" } },
-        text = details.joinToString("\n"),
-        languageHint = null,
-        darkMode = darkMode,
-    )
+    if (details.isEmpty() && imageAttachments.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (details.isNotEmpty()) {
+            CommandPreviewSection(
+                label = message.title.ifBlank { message.text.ifBlank { "tool" } },
+                text = details.joinToString("\n"),
+                languageHint = null,
+                darkMode = darkMode,
+            )
+        }
+        imageBlock()
+    }
 }
 
 @Composable

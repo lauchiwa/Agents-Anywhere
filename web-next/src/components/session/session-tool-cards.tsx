@@ -17,6 +17,8 @@ import { dashboardApi } from "@/features/dashboard/api"
 import type { Approval, ApprovalResolveStatus, ApprovalSelection, SessionView, TimelineItem } from "@/features/dashboard/types"
 import { useTranslations } from "next-intl"
 import { commandText, firstTextOf, recordsOf, textOf } from "@/components/session/session-utils"
+import { MessageAttachments } from "@/components/session/message-attachments"
+import { extractAttachments, type ReconcileAttachment } from "@/features/dashboard/attachments"
 
 const FILE_CHANGE_MONACO_OPTIONS = {
   folding: false,
@@ -64,6 +66,7 @@ export function ToolCard({
     textOf(item.content.outputText) ||
     (!isMcp ? textOf(item.content.error) : null)
   const changes = recordsOf(item.content.changes)
+  const attachments = extractAttachments(item.content)
   const webSearchUrl = kind === "web_search" ? (textOf(item.content.url) ?? null) : null
   const wakeupPrompt = kind === "schedule_wakeup" ? (textOf(item.content.prompt) ?? null) : null
   const title = timelineToolTitle(item, tSession)
@@ -88,6 +91,7 @@ export function ToolCard({
             command={command}
             output={output}
             changes={changes}
+            attachments={attachments}
             fallback={item.content}
             mcpArguments={mcpArguments}
             mcpError={mcpErrorText}
@@ -185,6 +189,7 @@ export function ToolDetailPanel({
   mcpError,
   webSearchUrl,
   wakeupPrompt,
+  attachments,
 }: {
   token: string
   session: SessionView
@@ -196,10 +201,14 @@ export function ToolDetailPanel({
   mcpError?: string | null
   webSearchUrl?: string | null
   wakeupPrompt?: string | null
+  attachments?: ReconcileAttachment[]
 }) {
+  const imageAttachments = (attachments ?? []).filter(
+    (a) => (a.mediaType ?? "").startsWith("image/"),
+  )
   const hasContent = Boolean(
     command || output || changes.length > 0 || mcpArguments != null || mcpError != null ||
-    webSearchUrl || wakeupPrompt,
+    webSearchUrl || wakeupPrompt || imageAttachments.length > 0,
   )
   if (!hasContent) return <JsonBlock value={fallback} />
   const outputLabel = mcpArguments != null ? "result" : "output"
@@ -249,6 +258,11 @@ export function ToolDetailPanel({
       {mcpError ? (
         <div className={cn((command || changes.length > 0 || mcpArguments != null || output || webSearchUrl || wakeupPrompt) && "border-t")}>
           <CodePanel label="error" code={mcpError} language="text" flush labelClassName="text-destructive" />
+        </div>
+      ) : null}
+      {imageAttachments.length > 0 ? (
+        <div className={cn((command || changes.length > 0 || mcpArguments != null || output || mcpError || webSearchUrl || wakeupPrompt) && "border-t", "p-3")}>
+          <MessageAttachments token={token} sessionId={session.id} attachments={imageAttachments} />
         </div>
       ) : null}
     </div>

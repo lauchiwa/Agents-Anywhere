@@ -937,6 +937,10 @@ class SessionDetailController(
             sourceItemId = id,
             author = MessageAuthor.Tool,
             text = name,
+            // A tool_result can carry inline images the connector externalized to
+            // fileId refs (e.g. a Read of a screenshot). Surface them the same way
+            // user-message attachments are rendered so the tool card shows the image.
+            attachments = content.records("attachments").mapNotNull { it.toTimelineAttachmentOrNull() },
             status = status,
             type = type,
             kind = TimelineMessageKind.ToolCall,
